@@ -8,8 +8,9 @@ fn main() {
         filename: String::from("esm.js"),
         code: String::from(
             r#"
-        const content = sys.devSync();
-        sys.core.print(`>> file content = "${content}"\n`);
+        import { fr } from "greeting.js";
+        fr.greet();
+        en.greet();
         "#,
         ),
     });

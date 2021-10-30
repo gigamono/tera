@@ -1,7 +1,7 @@
-use std::{fmt::format, path::Path, rc::Rc};
+use std::rc::Rc;
 // use utilities::result::Result;
-use deno_core::{include_js_files, v8::Name, Extension, JsRuntime, RuntimeOptions};
 use crate::{extensions, loaders};
+use deno_core::{JsRuntime, RuntimeOptions};
 
 pub struct SecureRuntime(JsRuntime);
 
@@ -16,7 +16,7 @@ impl SecureRuntime {
         // Create a new runtime.
         let mut runtime = JsRuntime::new(RuntimeOptions {
             module_loader: Some(Rc::new(loaders::dev())),
-            extensions: vec![extensions::dev(), extensions::fs()],
+            extensions: vec![extensions::fs()],
             ..Default::default()
         });
 
@@ -31,7 +31,19 @@ impl SecureRuntime {
 
     pub fn execute_module(&mut self, src: &Source) {
         // TODO(appcypher) Run module.
-        self.0.execute_script(&src.filename, &src.code).unwrap();
+        let tokio_runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap(); // TODO(appcypher)
+
+        // TODO(appcypher)
+        let future = async {
+            self.0.execute_script(&src.filename, &src.code).unwrap();
+            self.0.run_event_loop(false).await
+        };
+
+        // TODO(appcypher)
+        tokio_runtime.block_on(future).unwrap();
     }
 
     fn get_post_script() -> Source {

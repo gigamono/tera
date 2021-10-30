@@ -1,9 +1,10 @@
 use std::cell::RefCell;
+use std::fs;
 use std::rc::Rc;
 
 use deno_core::error::AnyError;
-use deno_core::{include_js_files, op_async, op_sync};
-use deno_core::{Extension, OpState, ResourceId};
+use deno_core::{include_js_files, op_async};
+use deno_core::{Extension, OpState};
 
 pub fn fs() -> Extension {
     Extension::builder()
@@ -19,8 +20,9 @@ pub fn fs() -> Extension {
 
 async fn op_read_text_file(
     _: Rc<RefCell<OpState>>,
-    _: ResourceId,
+    path: String,
     _: (),
 ) -> Result<String, AnyError> {
-    Ok(String::from("content from not-a-file"))
+    let content = fs::read_to_string(path).unwrap(); // TODO(appcypher): Permissions. Limit Read. Use tokio
+    Ok(content)
 }

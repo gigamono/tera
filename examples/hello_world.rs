@@ -11,7 +11,10 @@ fn main() {
         function greet(target) {
             return `hello ${target}`;
         }
-        sys.core.print(greet("world"));
+
+        let greeting = greet("world");
+
+        sys.core.print(`${greeting}\n`);
         "#,
         ),
     });

@@ -16,6 +16,7 @@ license-file = "LICENSE"
 [dependencies]
 deno_core = { path = "../deno/core" }
 utilities = { path = "../utilities" }
+tokio = { version = "1", features = ["full"] }
 
 [lib]
 name = "secure_runtime"

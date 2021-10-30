@@ -1742,6 +1742,7 @@ name = "secure-runtime"
 version = "0.1.0"
 dependencies = [
  "deno_core",
+ "tokio 1.13.0",
  "utilities",
 ]
 
