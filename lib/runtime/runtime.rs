@@ -1,8 +1,10 @@
-use std::rc::Rc;
-// use utilities::result::Result;
-use crate::{extensions, loaders};
-use deno_core::{JsRuntime, RuntimeOptions};
-
+use crate::{extensions, loaders, permissions::Permissions};
+use deno_core::{self, Extension, JsRuntime, ModuleLoader, RuntimeOptions};
+use std::{path::PathBuf, rc::Rc};
+use utilities::{
+    errors::Error,
+    result::{Context, Result},
+};
 pub struct SecureRuntime(JsRuntime);
 
 pub struct Source {
@@ -11,97 +13,95 @@ pub struct Source {
 }
 
 impl SecureRuntime {
-    pub fn new() -> Self {
-        // TODO(appcypher): Snapshot right after JsRuntime::new. And add snapshot to options on start
+    pub fn new(module_loader: Rc<dyn ModuleLoader>, extensions: Vec<Extension>) -> Result<Self> {
+        // TODO(appcypher):
+        //  Add support for snapshot.
+
         // Create a new runtime.
         let mut runtime = JsRuntime::new(RuntimeOptions {
-            module_loader: Some(Rc::new(loaders::dev())),
-            extensions: vec![extensions::fs()],
+            module_loader: Some(module_loader),
+            extensions,
             ..Default::default()
         });
 
         // Execute post_script. It sets the "sys" namespace among other things.
-        let post_script = Self::get_post_script();
+        let post_script = Self::get_post_script()?;
         runtime
             .execute_script(&post_script.filename, &post_script.code)
-            .unwrap(); // TODO(appcypher)
+            .context("executing post script")?;
 
-        Self(runtime)
+        Ok(Self(runtime))
     }
 
-    pub fn execute_module(&mut self, src: &Source) {
-        // TODO(appcypher) Run module.
+    pub fn new_default(permissions: Permissions) -> Result<Self> {
+        // Wrap permissions in smart ptr to be potentially used between threads.
+        let permissions = Rc::new(permissions);
+
+        // Create default module loader and extensions.
+        let module_loader = Rc::new(loaders::esm(permissions.clone()));
+        let extensions = vec![extensions::fs(permissions.clone())];
+
+        Self::new(module_loader, extensions)
+    }
+
+    pub fn execute_main_module(&mut self, filename: &str, module_code: String) -> Result<()> {
+        let module_specifier =
+            deno_core::resolve_url(&format!("file://{}", filename)).context(format!(
+                r#"resolving main module specifier as "file://{}""#,
+                filename
+            ))?;
+
         let tokio_runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
-            .unwrap(); // TODO(appcypher)
+            .context("creating a tokio runtime")?;
 
-        // TODO(appcypher)
-        let future = async {
-            self.0.execute_script(&src.filename, &src.code).unwrap();
-            self.0.run_event_loop(false).await
+        let evaluate_fut = async {
+            let module_id = self
+                .0
+                .load_main_module(&module_specifier, Some(module_code))
+                .await
+                .context("loading the main module")?;
+
+            let mut rx = self.0.mod_evaluate(module_id);
+
+            tokio::select! {
+                cancellable = &mut rx => {
+                    Self::handle_reciever_error(cancellable)?;
+                }
+                result = self.0.run_event_loop(false) => {
+                    result.context("running the event loop")?;
+                    Self::handle_reciever_error(rx.await)?;
+                }
+            };
+
+            Ok::<(), Error>(())
         };
 
-        // TODO(appcypher)
-        tokio_runtime.block_on(future).unwrap();
+        tokio_runtime.block_on(evaluate_fut)?;
+
+        Ok(())
     }
 
-    fn get_post_script() -> Source {
+    fn get_post_script() -> Result<Source> {
+        // TODO(appcypher): Instead of getting the post_sript at runtime, we should add statically at compile time. Maybe as a snapshot.
         let rel_path = "lib/runtime/post_script.js";
-        let path = format!("{}/{}", env!("CARGO_MANIFEST_DIR"), rel_path);
-        let code = std::fs::read_to_string(path).unwrap(); // TODO(appcypher): Also use await
-        Source {
-            filename: format!("sys:ext/{}", rel_path),
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(rel_path);
+        let code = std::fs::read_to_string(&path)
+            .context(format!(r#"getting post_script file, "{:?}""#, path))?;
+
+        Ok(Source {
+            filename: format!("sys:ext/{:?}", rel_path),
             code: code,
-        }
-    }
-}
-
-mod test {
-    use super::{SecureRuntime, Source};
-
-    #[test]
-    fn check_only_sys_namespace_visible() {
-        let mut runtime = SecureRuntime::new();
-
-        runtime.execute_module(&Source {
-            filename: String::from("esm.js"),
-            code: String::from("__bootstrap"),
-        });
-
-        runtime.execute_module(&Source {
-            filename: String::from("esm.js"),
-            code: String::from("Deno"),
-        });
+        })
     }
 
-    #[test]
-    fn check_unable_to_set_object_proto() {
-        let mut runtime = SecureRuntime::new();
+    fn handle_reciever_error<T: std::error::Error + 'static>(
+        result: std::result::Result<std::result::Result<(), deno_core::error::AnyError>, T>,
+    ) -> Result<()> {
+        // TODO
+        let val = result.unwrap();
 
-        runtime.execute_module(&Source {
-            filename: String::from("esm.js"),
-            code: String::from("sys.__proto__ = {}"),
-        });
-
-        runtime.execute_module(&Source {
-            filename: String::from("esm.js"),
-            code: String::from(
-                r#"
-            let test = { __proto__: "gibberish" };
-            test.__proto__;
-            "#,
-            ),
-        });
-    }
-
-    #[test]
-    fn check_sys_object_non_writable() {
-        let mut runtime = SecureRuntime::new();
-
-        runtime.execute_module(&Source {
-            filename: String::from("esm.js"),
-            code: String::from("sys = {}"),
-        });
+        val.context("running the event loop".to_string())
     }
 }

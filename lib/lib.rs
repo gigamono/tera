@@ -1,6 +1,6 @@
 pub mod extensions;
 pub mod loaders;
 mod runtime;
-pub mod capabilities;
+pub mod permissions;
 
 pub use runtime::*;

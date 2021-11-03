@@ -2359,6 +2359,7 @@ name = "utilities"
 version = "0.1.0"
 dependencies = [
  "actix-web",
+ "anyhow",
  "bincode",
  "deno_core",
  "diesel",

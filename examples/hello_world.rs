@@ -1,21 +1,16 @@
 extern crate secure_runtime;
 
-use secure_runtime::{SecureRuntime, Source};
+use std::fs;
 
-fn main() {
-    let mut runtime = SecureRuntime::new();
-    runtime.execute_module(&Source {
-        filename: String::from("esm.js"),
-        code: String::from(
-            r#"
-        function greet(target) {
-            return `hello ${target}`;
-        }
+use secure_runtime::SecureRuntime;
+use utilities::result::Result;
 
-        let greeting = greet("world");
+fn main() -> Result<()> {
+    let permissions = Default::default();
+    let mut runtime = SecureRuntime::new_default(permissions)?;
 
-        sys.core.print(`${greeting}\n`);
-        "#,
-        ),
-    });
+    let main_module_filename = "./examples/js/hello_world.js";
+    let main_module_code = fs::read_to_string(main_module_filename)?;
+
+    runtime.execute_main_module(main_module_filename, main_module_code)
 }

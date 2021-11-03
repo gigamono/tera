@@ -1,5 +1,4 @@
 mod esm;
-mod dev;
 
+pub use deno_core::ModuleLoader; // Re-export
 pub use esm::esm;
-pub use dev::dev;
