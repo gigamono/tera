@@ -1,27 +1,18 @@
 ### SECURITY
 
-At the core of `secure-runtime` is an `isolate` which represents a isolated JavaScript runtime that does not share memory with other isolates running in the same process. Shared memory is a recipe for exploits and vulnerabilities and this architecture helps prevent that.
-
-`secure-runtime` creates a permission system on top of this that prevents running modules from accessing resources the user has not authorized. `secure-runtime` provides a secure implementation of common extensions like `fs`.
-
+At the core of `secure-runtime` is an `isolate`, a JavaScript vm that does not share memory with other vm instances running in the same process. Shared memory is a recipe for exploits and vulnerabilities; this architecture helps prevent that.
 
 #### Why We Want a Capability-based Secure Runtime
 
-We are in an age where we combine multiple software of different origins and makers to create our own solution. Reuse is a great but it comes with security issues as evidenced by the number of CVEs related to [exploits introduced into open-source packages every year](). We let third party packages run on our behalf but we grant them too much power that many of them don't need. This has to change and it is the reason why `secure-runtime` exists.
+We are in a time where we combine multiple software of different origins and makers to create our own solution. Reuse is great but it comes with security issues as evidenced by the number of CVEs related to [exploits introduced into open-source packages every year](). We let third party packages run on our behalf but we grant them too much power that many of them don't need. This has to change and it is the reason why `secure-runtime` exists.
 
-`secure-runtime` allows only the capabilities the user has allowed for any running module. If a running module tries to access a resource it not authorized to, an exception is thrown.
+`secure-runtime` allows only the capabilities the user has allowed for any running module. If a running module tries to access a resource it is not authorized to, an exception is thrown.
 
 There are similar initiatives like [WASI] and [Capsicum].
 
 #### How is This Different from Deno?
 
-`Deno` is a general Typescript and JavaScript runtime with a permission system that is currently only available via the CLI.
-On the other hand, `deno-core`, the project `Deno` is based on, provide the necessary primitives for buidling a similar system for non-interactive scenarios.
-So `secure-runtime` is based on `deno-core` and it is designed from the start for secure execution of JavaScript code in a multi-tenant environment like servers.
-
-Currently, there is a lot going on in the `Deno` project because its goal is to be general. For example, host functions (that sometimes expose system calls) are implemented without any permissions guarding their use.
-
-`Deno` also supports TypeScript, `secure-runtime` doesn't.
+`Deno` is indeed similar to `secure-runtime`; both are based on `deno_core`. They both introduce runtime permissions and capability-based security, however `secure-runtime` is designed to have a more granular permission system that is extendable by the developer.
 
 ##
 

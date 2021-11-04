@@ -1,8 +1,17 @@
+use hashbrown::HashSet;
 use std::any::{type_name, TypeId};
 use std::collections::BTreeMap;
-use utilities::result::{Context, Result};
+use utilities::errors;
+use utilities::result::Result;
 
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
+// TODO(appcypher):
+//  Use HashSet<Box<dyn Resource>> so that we can pass values like PathBuf and resolve path to canonical in fs method.
+//  impl Hash for Box<dyn Resource>
+//  impl Resource for FS
+//  pub trait Resource { fn downcast<T>(&self) }
+type PermissionMap = BTreeMap<PermissionTypeKey, HashSet<String>>;
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct PermissionTypeKey {
     pub type_id: TypeId,
     pub variant: i32,
@@ -14,18 +23,16 @@ pub trait PermissionType: std::fmt::Debug {
     fn get_type<'a>(&self) -> String {
         format!("{}::{:?}", type_name::<Self>(), self)
     }
+
+    fn check(
+        &self,
+        permission_key: &PermissionTypeKey,
+        resource: &str,
+        allow_list: &HashSet<String>,
+    ) -> Result<()>;
 }
 
-type PermissionMap = BTreeMap<PermissionTypeKey, PermissionChecker>;
-
-type PermissionCheckFn = dyn Fn(&Box<dyn PermissionType>, &PermissionTypeKey, &str, &Vec<String>) -> Result<()>;
-
-pub struct PermissionChecker {
-    pub permitted_canon_resources: Vec<String>,
-    pub check_fn: Box<PermissionCheckFn>,
-}
-
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct Permissions(PermissionMap);
 
 pub struct PermissionsBuilder(pub PermissionMap);
@@ -44,14 +51,14 @@ impl Permissions {
         let permission_key = &permission.get_key();
 
         // Check permission type exists.
-        let checker = self.0.get(permission_key).context(format!(
-            r#"permission type "{}" does not exist for resource {:?}"#,
-            permission.get_type(),
-            resource
-        ))?;
-
-        // Call stored permission checking function.
-        (checker.check_fn)(permission, permission_key, resource, &checker.permitted_canon_resources)?;
+        match self.0.get(permission_key) {
+            None => errors::permission_error(format!(
+                r#"permission type "{}" does not exist for file {:?}"#,
+                permission.get_type(),
+                resource
+            ))?,
+            Some(allow_list) => permission.check(permission_key, resource, &allow_list)?,
+        }
 
         Ok(())
     }
@@ -64,13 +71,5 @@ impl PermissionsBuilder {
 
     pub fn build(self) -> Permissions {
         Permissions(self.0)
-    }
-}
-
-impl std::fmt::Debug for PermissionChecker {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PermissionChecker")
-            .field("permitted_resources", &self.permitted_canon_resources)
-            .finish()
     }
 }

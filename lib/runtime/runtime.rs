@@ -1,8 +1,9 @@
 use crate::{extensions, loaders, permissions::Permissions};
 use deno_core::{self, Extension, JsRuntime, ModuleLoader, RuntimeOptions};
 use std::{path::PathBuf, rc::Rc};
+use tokio::fs;
 use utilities::{
-    errors::Error,
+    errors::{Error, SystemError},
     result::{Context, Result},
 };
 pub struct SecureRuntime(JsRuntime);
@@ -14,8 +15,7 @@ pub struct Source {
 
 impl SecureRuntime {
     pub fn new(module_loader: Rc<dyn ModuleLoader>, extensions: Vec<Extension>) -> Result<Self> {
-        // TODO(appcypher):
-        //  Add support for snapshot.
+        // TODO(appcypher): Add support for snapshot.
 
         // Create a new runtime.
         let mut runtime = JsRuntime::new(RuntimeOptions {
@@ -24,11 +24,8 @@ impl SecureRuntime {
             ..Default::default()
         });
 
-        // Execute post_script. It sets the "sys" namespace among other things.
-        let post_script = Self::get_post_script()?;
-        runtime
-            .execute_script(&post_script.filename, &post_script.code)
-            .context("executing post script")?;
+        // Execute postscripts.
+        Self::execute_postscripts(&mut runtime)?;
 
         Ok(Self(runtime))
     }
@@ -45,26 +42,31 @@ impl SecureRuntime {
     }
 
     pub fn execute_main_module(&mut self, filename: &str, module_code: String) -> Result<()> {
+        // Add file scheme to filename and resolve to URL.
         let module_specifier =
             deno_core::resolve_url(&format!("file://{}", filename)).context(format!(
                 r#"resolving main module specifier as "file://{}""#,
                 filename
             ))?;
 
+        // Create a runtime to run on current thread.
         let tokio_runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .context("creating a tokio runtime")?;
 
         let evaluate_fut = async {
+            // Load main module and deps.
             let module_id = self
                 .0
                 .load_main_module(&module_specifier, Some(module_code))
                 .await
                 .context("loading the main module")?;
 
+            // Run main module.
             let mut rx = self.0.mod_evaluate(module_id);
 
+            // Wait for message from module eval or event loop.
             tokio::select! {
                 cancellable = &mut rx => {
                     Self::handle_reciever_error(cancellable)?;
@@ -78,30 +80,56 @@ impl SecureRuntime {
             Ok::<(), Error>(())
         };
 
-        tokio_runtime.block_on(evaluate_fut)?;
-
-        Ok(())
+        tokio_runtime.block_on(evaluate_fut)
     }
 
-    fn get_post_script() -> Result<Source> {
-        // TODO(appcypher): Instead of getting the post_sript at runtime, we should add statically at compile time. Maybe as a snapshot.
-        let rel_path = "lib/runtime/post_script.js";
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(rel_path);
-        let code = std::fs::read_to_string(&path)
-            .context(format!(r#"getting post_script file, "{:?}""#, path))?;
+    fn execute_postscripts(runtime: &mut JsRuntime) -> Result<()> {
+        // TODO(appcypher): Instead of getting the postscripts at runtime, we should add them statically at compile time. Maybe as a snapshot.
+        // Create a runtime to run on current thread.
+        let tokio_runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .context("creating a tokio runtime")?;
 
-        Ok(Source {
-            filename: format!("sys:ext/{:?}", rel_path),
-            code: code,
-        })
+        let read_file_fut = async {
+            // Get postcripts directory.
+            let postscripts_dir =
+                &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("lib/runtime/postscripts");
+
+            // SEC: Blindly assume everything in directory is a postscript.
+            let mut postscripts = std::fs::read_dir(postscripts_dir)
+                .context(format!(r#"reading postcripts dir "{:?}""#, postscripts_dir))?
+                .map(|entry| -> Result<PathBuf> {
+                    Ok(entry
+                        .context("collecting entries in postcripts dir")?
+                        .path())
+                })
+                .collect::<Result<Vec<PathBuf>>>()?;
+
+            // Sort postscripts.
+            postscripts.sort();
+
+            for path in postscripts.iter() {
+                // Read content.
+                let content = fs::read_to_string(&path)
+                    .await
+                    .context(format!(r#"getting postscript file, "{:?}""#, path))?;
+
+                // Execute postscript.
+                runtime
+                    .execute_script(&format!("sys:ext/{:?}", &path), &content)
+                    .context("executing postscript file")?;
+            }
+
+            Ok::<(), SystemError>(())
+        };
+
+        tokio_runtime.block_on(read_file_fut)
     }
 
-    fn handle_reciever_error<T: std::error::Error + 'static>(
+    fn handle_reciever_error<T: std::error::Error + 'static + Send + Sync>(
         result: std::result::Result<std::result::Result<(), deno_core::error::AnyError>, T>,
     ) -> Result<()> {
-        // TODO
-        let val = result.unwrap();
-
-        val.context("running the event loop".to_string())
+        result?.context("running the event loop".to_string())
     }
 }
