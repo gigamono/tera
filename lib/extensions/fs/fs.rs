@@ -55,7 +55,7 @@ async fn op_open(
     path: String,
     options: FileOptions,
 ) -> Result<ResourceId, AnyError> {
-    // TODO(appcypher): What happens is one runtime opens a file in read-only mode and another runtime in the process opens it in write mode and tries to write to it.
+    // TODO(appcypher): What happens if one runtime opens a file in read-only mode and another runtime in the process opens it in write mode and tries to write to it.
     // Check open permissions.
     state
         .borrow()

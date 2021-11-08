@@ -1,5 +1,6 @@
 use crate::{extensions, loaders, permissions::Permissions};
 use deno_core::{self, Extension, JsRuntime, ModuleLoader, RuntimeOptions};
+use log::debug;
 use std::{path::PathBuf, rc::Rc};
 use tokio::fs;
 use utilities::result::{Context, Result};
@@ -26,6 +27,8 @@ impl SecureRuntime {
 
         // Execute postscripts.
         Self::execute_postscripts(&mut runtime).await?;
+
+        debug!("Runtime started");
 
         Ok(Self(runtime))
     }
