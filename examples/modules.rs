@@ -11,7 +11,8 @@ use secure_runtime::{
 };
 use utilities::result::Result;
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     // Create permitted resources
     let example_js_dir = fs::canonicalize("./examples/js")?.display().to_string();
 
@@ -21,12 +22,12 @@ fn main() -> Result<()> {
         .build();
 
     // Create a new runtime.
-    let mut runtime = SecureRuntime::new_default(permissions)?;
+    let mut runtime = SecureRuntime::new_default(permissions).await?;
 
     // Get main module code.
     let main_module_filename = "./examples/js/modules.js";
     let main_module_code = fs::read_to_string(main_module_filename)?;
 
     // Execute main module.
-    runtime.execute_main_module(main_module_filename, main_module_code)
+    runtime.execute_main_module(main_module_filename, main_module_code).await
 }
