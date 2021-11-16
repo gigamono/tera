@@ -13,10 +13,10 @@ use utilities::{errors, result::Result};
 type PermissionMap = BTreeMap<PermissionTypeKey, HashSet<Box<dyn Resource>>>;
 
 pub trait Resource: Downcast {
-    fn box_partial_eq(&self, other: &Box<dyn Resource>) -> bool;
-    fn box_hash(&self, state: &mut dyn Hasher);
-    fn box_debug(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result;
-    fn box_clone(&self) -> Box<dyn Resource>;
+    fn get_partial_eq(&self, other: &Box<dyn Resource>) -> bool;
+    fn get_hash(&self, state: &mut dyn Hasher);
+    fn get_debug(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result;
+    fn get_clone(&self) -> Box<dyn Resource>;
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -117,24 +117,24 @@ impl Eq for Box<dyn Resource> {}
 
 impl PartialEq for Box<dyn Resource> {
     fn eq(&self, other: &Self) -> bool {
-        self.box_partial_eq(other)
+        self.get_partial_eq(other)
     }
 }
 
 impl Hash for Box<dyn Resource> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.box_hash(state)
+        self.get_hash(state)
     }
 }
 
 impl std::fmt::Debug for Box<dyn Resource> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.box_debug(f)
+        self.get_debug(f)
     }
 }
 
 impl Clone for Box<dyn Resource> {
     fn clone(&self) -> Self {
-        self.box_clone()
+        self.get_clone()
     }
 }

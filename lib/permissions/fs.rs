@@ -100,18 +100,12 @@ impl PermissionType for FS {
     }
 }
 
-impl Into<Box<dyn PermissionType>> for FS {
-    fn into(self) -> Box<dyn PermissionType> {
-        Box::new(self)
-    }
-}
-
 impl Resource for PathString {
-    fn box_clone(&self) -> Box<dyn Resource> {
+    fn get_clone(&self) -> Box<dyn Resource> {
         Box::new(self.clone())
     }
 
-    fn box_partial_eq(&self, other: &Box<dyn Resource>) -> bool {
+    fn get_partial_eq(&self, other: &Box<dyn Resource>) -> bool {
         if let Some(other) = other.downcast_ref::<PathString>() {
             return self == other
         }
@@ -119,12 +113,18 @@ impl Resource for PathString {
         false
     }
 
-    fn box_debug(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn get_debug(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_tuple("PathString").field(&self.0).finish()
     }
 
-    fn box_hash(&self, mut state: &mut dyn Hasher) {
+    fn get_hash(&self, mut state: &mut dyn Hasher) {
         self.hash(&mut state)
+    }
+}
+
+impl Into<Box<dyn PermissionType>> for FS {
+    fn into(self) -> Box<dyn PermissionType> {
+        Box::new(self)
     }
 }
 
