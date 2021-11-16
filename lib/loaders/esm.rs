@@ -1,9 +1,9 @@
-use std::{fs, rc::Rc};
+use std::{fs, pin::Pin, rc::Rc};
 use utilities::{errors, result::Context};
 
 use deno_core::{futures::FutureExt, ModuleLoader, ModuleSource};
 
-use crate::permissions::{fs::FS, Permissions};
+use crate::permissions::{Permissions, fs::{FS, PathString}};
 
 pub struct ESMLoader {
     permissions: Rc<Permissions>,
@@ -28,12 +28,13 @@ impl ModuleLoader for ESMLoader {
         Ok(deno_core::resolve_import(specifier, referrer)?)
     }
 
+    // TODO(appcypher): SEC: Support caching. Modules can be hi-jacked at runtime.
     fn load(
         &self,
         module_specifier: &deno_core::ModuleSpecifier,
         _maybe_referrer: Option<deno_core::ModuleSpecifier>,
         _is_dyn_import: bool,
-    ) -> std::pin::Pin<Box<deno_core::ModuleSourceFuture>> {
+    ) -> Pin<Box<deno_core::ModuleSourceFuture>> {
         let module_specifier = module_specifier.clone();
         let permissions = self.permissions.clone();
 
@@ -54,7 +55,7 @@ impl ModuleLoader for ESMLoader {
                 .context("getting path from specifier")?;
 
             // Check permissions.
-            permissions.check(FS::Read, module_path)?;
+            permissions.check(FS::Read, PathString(module_path.into())).await?;
 
             // Fetch module source.
             let code = fs::read_to_string(module_path)

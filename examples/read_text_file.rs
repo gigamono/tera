@@ -1,18 +1,23 @@
 extern crate secure_runtime;
 
-use std::fs;
-
-use secure_runtime::{SecureRuntime, permissions::{Permissions, fs::{FS, FSCapability}}, set};
+use secure_runtime::{
+    permissions::{
+        fs::{PathString, FS},
+        Permissions,
+    },
+    SecureRuntime,
+};
+use tokio::fs;
 use utilities::result::Result;
 
 #[tokio::main]
 async fn main() -> Result<()> {
     // Create permitted resources
-    let example_txt_dir = fs::canonicalize("./examples/txt")?.display().to_string();
+    let allow_list = [PathString("./examples/txt".into())];
 
     // Create permissions
     let permissions = Permissions::builder()
-        .fs(FS::Read, set![example_txt_dir])
+        .add_permissions(&[(FS::Open, &allow_list), (FS::Read, &allow_list)])
         .build();
 
     // Create a new runtime.
@@ -20,8 +25,10 @@ async fn main() -> Result<()> {
 
     // Read main module code.
     let main_module_filename = "./examples/js/read_text_file.js";
-    let main_module_code = fs::read_to_string(main_module_filename)?;
+    let main_module_code = fs::read_to_string(main_module_filename).await?;
 
     // Execute main module.
-    runtime.execute_main_module(main_module_filename, main_module_code).await
+    runtime
+        .execute_main_module(main_module_filename, main_module_code)
+        .await
 }

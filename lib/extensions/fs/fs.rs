@@ -10,7 +10,7 @@ use deno_core::{
     error::AnyError, include_js_files, op_async, Extension, OpState, Resource, ResourceId,
 };
 
-use crate::permissions::fs::FS;
+use crate::permissions::fs::{FS, PathString};
 use crate::permissions::Permissions;
 
 pub fn fs(permissions: Rc<Permissions>) -> Extension {
@@ -55,12 +55,14 @@ async fn op_open(
     path: String,
     options: FileOptions,
 ) -> Result<ResourceId, AnyError> {
+    let path = &path;
+
     // TODO(appcypher): What happens if one runtime opens a file in read-only mode and another runtime in the process opens it in write mode and tries to write to it.
     // Check open permissions.
     state
         .borrow()
         .borrow::<Rc<Permissions>>()
-        .check(FS::Open, &path)?;
+        .check(FS::Open, PathString(path.into())).await?;
 
     // Open file with options specified.
     let file = OpenOptions::new()
@@ -68,14 +70,14 @@ async fn op_open(
         .write(options.write)
         .append(options.append)
         .truncate(options.truncate)
-        .open(&path)
+        .open(path)
         .await
-        .context(format!(r#"opening file "{}""#, &path))?;
+        .context(format!(r#"opening file "{}""#, path))?;
 
     // Save file info for later.
     let rid = state.try_borrow_mut()?.resource_table.add(FileResource {
         file: RefCell::new(file),
-        path,
+        path: path.into(),
         options,
     });
 
@@ -87,22 +89,24 @@ async fn op_read_text_file(
     path: String,
     _: (),
 ) -> Result<String, AnyError> {
+    let path = &path;
+
     // Check open permission.
     state
         .borrow()
         .borrow::<Rc<Permissions>>()
-        .check(FS::Open, &path)?;
+        .check(FS::Open, PathString(path.into())).await?;
 
     // Check read permission.
     state
         .borrow()
         .borrow::<Rc<Permissions>>()
-        .check(FS::Read, &path)?;
+        .check(FS::Read, PathString(path.into())).await?;
 
     // Read file content.
     let content = fs::read_to_string(&path)
         .await
-        .context(format!(r#"reading file content "{}""#, &path))?;
+        .context(format!(r#"reading file content "{}""#, path))?;
 
     Ok(content)
 }
@@ -125,7 +129,7 @@ async fn op_write_all(
     state
         .borrow()
         .borrow::<Rc<Permissions>>()
-        .check(FS::Write, &res.path)?;
+        .check(FS::Write, PathString((&res.path).into())).await?;
 
     // Write to file.
     res.file
