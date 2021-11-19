@@ -4,10 +4,68 @@
     </a>
 </div>
 
-<h1 align="center">Secure Runtime</h1>
+<h1 align="center">Tera</h1>
 
-`secure-runtime`, as the name implies, is a secure runtime for JavaScript, designed for the multi-tenant serverless environment. It is an implementation based on [deno-core](https://github.com/denoland/deno/tree/main/core).
+`tera` is a lean secure capability-based runtime for JavaScript. It is primarily designed for the multi-tenant serverless environment but has uses in other contexts.
+
+`tera` provides permissions-enabled system APIs that you can get started with but you can also create your own permission types and host APIs.
+
+There is currently no plan to strictly support web-compatible APIs or out-of-the-box typescript compilation. If want those functionalities, you should take a look at [deno](https://github.com/denoland/deno).
+
+`tera` is based on  [deno_core](https://github.com/denoland/deno/tree/main/core) and heavily inspired by [deno](https://github.com/denoland/deno).
 
 > Information provided here is for folks working on this package. If your goal is to get started with the Gigamono framework, check the [Gigamono repo](https://github.com/gigamono/gigamono) on how to do that.
 
 ##
+
+### Content
+
+1. [Usage](#usage)
+
+##
+
+### Usage <a name="usage" />
+
+You need to add [tokio](https://crates.io/crates/tokio) to your dependencies.
+
+:warning: The current API is subject to change.
+
+```rs
+extern crate tera;
+
+use tera::{
+    permissions::{
+        fs::{PathString, FS},
+        Permissions,
+    },
+    Runtime,
+};
+use tokio::fs;
+use utilities::result::Result;
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    // Create allowed resources
+    let allow_list = [PathString("./examples/txt".into())];
+
+    // Create permissions object.
+    let permissions = Permissions::builder()
+        .add_permissions(&[
+            (FS::Open, &allow_list),
+            (FS::Read, &allow_list)
+        ])
+        .build();
+
+    // Start a new js runtime.
+    let mut runtime = Runtime::default_main(permissions).await?;
+
+    // Get code and main module filename.
+    let main_module_filename = "./examples/js/read_text_file.js";
+    let main_module_code = fs::read_to_string(main_module_filename).await?;
+
+    // Execute the main module code.
+    runtime
+        .execute_module(main_module_filename, main_module_code)
+        .await
+}
+```
