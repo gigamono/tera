@@ -1,20 +1,20 @@
-extern crate secure_runtime;
+extern crate tera;
 
 use std::fs;
 
-use secure_runtime::SecureRuntime;
+use tera::{Runtime, permissions::Permissions};
 use utilities::result::Result;
 
 #[tokio::main]
 async fn main() -> Result<()> {
     // Create runtime with default permissions.
-    let permissions = Default::default();
-    let mut runtime = SecureRuntime::new_default(permissions).await?;
+    let permissions = Permissions::default();
+    let mut runtime = Runtime::default_main(permissions).await?;
 
     // Get main module code.
     let main_module_filename = "./examples/js/hello_world.js";
     let main_module_code = fs::read_to_string(main_module_filename)?;
 
     // Execute main module.
-    runtime.execute_main_module(main_module_filename, main_module_code).await
+    runtime.execute_module(main_module_filename, main_module_code).await
 }

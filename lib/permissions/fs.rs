@@ -1,9 +1,8 @@
 use super::{PermissionType, PermissionTypeKey, Resource};
-use deno_core::{error::Context, futures::FutureExt};
-use hashbrown::HashSet;
-use std::{any::TypeId, future::Future, hash::{Hash, Hasher}, path::PathBuf, pin::Pin};
+use deno_core::futures::FutureExt;
+use std::{any::TypeId, future::Future, path::PathBuf, pin::Pin};
 use tokio::fs;
-use utilities::{errors, result::Result};
+use utilities::{errors, result::{Result, Context}};
 
 #[derive(Debug, Copy, Clone)]
 pub enum FS {
@@ -51,7 +50,7 @@ impl PermissionType for FS {
         &self,
         _: &PermissionTypeKey,
         filename: &Box<dyn Resource>,
-        allow_list: &HashSet<Box<dyn Resource>>,
+        allow_list: &Vec<Box<dyn Resource>>,
     ) -> Pin<Box<dyn Future<Output = Result<()>>>> {
         // Downcast trait object to PathString.
         let filename = filename.downcast_ref::<PathString>().unwrap().0.clone();
@@ -77,7 +76,7 @@ impl PermissionType for FS {
                 // Downcast trait object to PathString.
                 let allowed_dir = allowed_dir.downcast::<PathString>().unwrap().0;
 
-                // SEC: Must canonoicalize path.
+                // SEC: Must canonoicalize path before matching.
                 let canon_dir = fs::canonicalize(&allowed_dir).await?;
                 if path.starts_with(canon_dir) {
                     found = true;
@@ -105,20 +104,8 @@ impl Resource for PathString {
         Box::new(self.clone())
     }
 
-    fn get_partial_eq(&self, other: &Box<dyn Resource>) -> bool {
-        if let Some(other) = other.downcast_ref::<PathString>() {
-            return self == other
-        }
-
-        false
-    }
-
     fn get_debug(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_tuple("PathString").field(&self.0).finish()
-    }
-
-    fn get_hash(&self, mut state: &mut dyn Hasher) {
-        self.hash(&mut state)
     }
 }
 

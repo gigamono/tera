@@ -5,19 +5,19 @@ use std::{path::PathBuf, rc::Rc};
 use tokio::fs;
 use utilities::result::{Context, Result};
 
-pub struct SecureRuntime(JsRuntime);
+pub struct Runtime(JsRuntime);
 
 pub struct Source {
     pub filename: String,
     pub code: String,
 }
 
-impl SecureRuntime {
+impl Runtime {
     pub async fn new(
         module_loader: Rc<dyn ModuleLoader>,
         extensions: Vec<Extension>,
     ) -> Result<Self> {
-        // TODO(appcypher): Add support for snapshot.
+        // TODO(appcypher): Add support for memory snapshot after initialisation that can then be reused each time.
 
         // Create a new runtime.
         let mut runtime = JsRuntime::new(RuntimeOptions {
@@ -34,7 +34,8 @@ impl SecureRuntime {
         Ok(Self(runtime))
     }
 
-    pub async fn new_default(permissions: Permissions) -> Result<Self> {
+    pub async fn default_main(permissions: Permissions) -> Result<Self> {
+        // TODO(appcypher): There should be a series of snapshots with different combination of extensions. Chosen based on permissions.
         let permissions = Rc::new(permissions);
 
         // Create default module loader and extensions.
@@ -44,13 +45,32 @@ impl SecureRuntime {
         Self::new(module_loader, extensions).await
     }
 
-    pub async fn execute_main_module(&mut self, filename: &str, module_code: String) -> Result<()> {
+    pub async fn default_event(permissions: Permissions) -> Result<Self> {
+        // TODO(appcypher): There should be a series of snapshots with different combination of extensions. Chosen based on permissions.
+        let permissions = Rc::new(permissions);
+
+        // Create default module loader and extensions.
+        let module_loader = Rc::new(loaders::esm(permissions.clone()));
+        let extensions = vec![
+            extensions::fs(permissions.clone()),
+            extensions::event_http(permissions.clone()),
+        ];
+
+        Self::new(module_loader, extensions).await
+    }
+
+    pub async fn execute_module(&mut self, filename: impl Into<&str>, module_code: impl Into<String>) -> Result<()> {
+        let filename = filename.into();
+        let module_code = module_code.into();
+
         // Add file scheme to filename and resolve to URL.
         let module_specifier =
             deno_core::resolve_url(&format!("file://{}", filename)).context(format!(
                 r#"resolving main module specifier as "file://{}""#,
                 filename
             ))?;
+
+        println!(">> module specifier {}", module_specifier);
 
         // Load main module and deps.
         let module_id = self
@@ -77,7 +97,8 @@ impl SecureRuntime {
     }
 
     async fn execute_postscripts(runtime: &mut JsRuntime) -> Result<()> {
-        // TODO(appcypher): Instead of getting the postscripts at runtime, we should add them statically at compile time. Maybe as a snapshot.
+        // TODO(appcypher): Instead of fetching the postscripts at runtime, we should add them statically at compile time. Embedded in the binary for faster load time. Minified maybe
+        // TODO(appcypher): Also support skipping builtin postcripts and loading new ones at runtime.
         // Get postcripts directory.
         let postscripts_dir =
             &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("lib/runtime/postscripts");

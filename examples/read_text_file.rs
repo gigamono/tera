@@ -1,11 +1,11 @@
-extern crate secure_runtime;
+extern crate tera;
 
-use secure_runtime::{
+use tera::{
     permissions::{
         fs::{PathString, FS},
         Permissions,
     },
-    SecureRuntime,
+    Runtime,
 };
 use tokio::fs;
 use utilities::result::Result;
@@ -21,7 +21,7 @@ async fn main() -> Result<()> {
         .build();
 
     // Create a new runtime.
-    let mut runtime = SecureRuntime::new_default(permissions).await?;
+    let mut runtime = Runtime::default_main(permissions).await?;
 
     // Read main module code.
     let main_module_filename = "./examples/js/read_text_file.js";
@@ -29,6 +29,6 @@ async fn main() -> Result<()> {
 
     // Execute main module.
     runtime
-        .execute_main_module(main_module_filename, main_module_code)
+        .execute_module(main_module_filename, main_module_code)
         .await
 }
