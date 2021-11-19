@@ -6,9 +6,9 @@
 
 <h1 align="center">Tera</h1>
 
-`tera` is a lean secure capability-based runtime for JavaScript. It is primarily designed for the multi-tenant serverless environment but has uses in other contexts.
+`tera` is a lean secure capability-based runtime for JavaScript. It is primarily designed for multi-tenant serverless environment but has uses in other contexts.
 
-`tera` provides permissions-enabled system APIs that you can get started with but you can also create your own permission types and host APIs.
+`tera` provides a small set of permission-enabled system APIs that you can get started with but you can also create your own permission types and host APIs.
 
 There is currently no plan to strictly support web-compatible APIs or out-of-the-box typescript compilation. If want those functionalities, you should take a look at [deno](https://github.com/denoland/deno).
 

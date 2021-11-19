@@ -1,3 +1,5 @@
+// Copyright 2021 the Gigamono authors. All rights reserved. Apache 2.0 license.
+
 // TODO(appcypher): Change APIs to be more compatible with Deno.
 // TODO(appcypher): Synchronisation needed with fcntl. Also applies to db.
 // https://blog.cloudflare.com/durable-objects-easy-fast-correct-choose-three/

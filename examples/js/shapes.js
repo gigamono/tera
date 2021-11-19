@@ -1,3 +1,5 @@
+// Copyright 2021 the Gigamono authors. All rights reserved. Apache 2.0 license.
+
 // The Rectangle class.
 export class Rectangle {
   constructor(height, width) {

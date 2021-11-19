@@ -1,9 +1,14 @@
+// Copyright 2021 the Gigamono authors. All rights reserved. Apache 2.0 license.
+
 use std::{fs, pin::Pin, rc::Rc};
 use utilities::{errors, result::Context};
 
 use deno_core::{futures::FutureExt, ModuleLoader, ModuleSource};
 
-use crate::permissions::{Permissions, fs::{FS, PathString}};
+use crate::permissions::{
+    fs::{PathString, FS},
+    Permissions,
+};
 
 pub struct ESMLoader {
     permissions: Rc<Permissions>,
@@ -55,7 +60,9 @@ impl ModuleLoader for ESMLoader {
                 .context("getting path from specifier")?;
 
             // Check permissions.
-            permissions.check(FS::Read, PathString(module_path.into())).await?;
+            permissions
+                .check(FS::Read, PathString(module_path.into()))
+                .await?;
 
             // Fetch module source.
             let code = fs::read_to_string(module_path)

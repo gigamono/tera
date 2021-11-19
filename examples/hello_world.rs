@@ -1,8 +1,10 @@
+// Copyright 2021 the Gigamono authors. All rights reserved. Apache 2.0 license.
+
 extern crate tera;
 
 use std::fs;
 
-use tera::{Runtime, permissions::Permissions};
+use tera::{permissions::Permissions, Runtime};
 use utilities::result::Result;
 
 #[tokio::main]
@@ -16,5 +18,7 @@ async fn main() -> Result<()> {
     let main_module_code = fs::read_to_string(main_module_filename)?;
 
     // Execute main module.
-    runtime.execute_module(main_module_filename, main_module_code).await
+    runtime
+        .execute_module(main_module_filename, main_module_code)
+        .await
 }

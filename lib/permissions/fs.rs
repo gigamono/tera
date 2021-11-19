@@ -1,8 +1,13 @@
+// Copyright 2021 the Gigamono authors. All rights reserved. Apache 2.0 license.
+
 use super::{PermissionType, PermissionTypeKey, Resource};
 use deno_core::futures::FutureExt;
 use std::{any::TypeId, future::Future, path::PathBuf, pin::Pin};
 use tokio::fs;
-use utilities::{errors, result::{Result, Context}};
+use utilities::{
+    errors,
+    result::{Context, Result},
+};
 
 #[derive(Debug, Copy, Clone)]
 pub enum FS {

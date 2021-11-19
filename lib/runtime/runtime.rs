@@ -1,3 +1,5 @@
+// Copyright 2021 the Gigamono authors. All rights reserved. Apache 2.0 license.
+
 use crate::{extensions, loaders, permissions::Permissions};
 use deno_core::{self, Extension, JsRuntime, ModuleLoader, RuntimeOptions};
 use log::debug;
