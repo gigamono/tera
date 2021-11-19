@@ -1,20 +1,16 @@
 use downcast_rs::{impl_downcast, Downcast};
-use hashbrown::HashSet;
 use std::any::{type_name, TypeId};
 use std::cmp::Eq;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::future::Future;
-use std::hash::{Hash, Hasher};
 use std::iter::FromIterator;
 use std::pin::Pin;
 use utilities::{errors, result::Result};
 
-type PermissionMap = BTreeMap<PermissionTypeKey, HashSet<Box<dyn Resource>>>;
+type PermissionMap = BTreeMap<PermissionTypeKey, Vec<Box<dyn Resource>>>;
 
 pub trait Resource: Downcast {
-    fn get_partial_eq(&self, other: &Box<dyn Resource>) -> bool;
-    fn get_hash(&self, state: &mut dyn Hasher);
     fn get_debug(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result;
     fn get_clone(&self) -> Box<dyn Resource>;
 }
@@ -36,7 +32,7 @@ pub trait PermissionType: std::fmt::Debug {
         &self,
         permission_key: &PermissionTypeKey,
         resource: &Box<dyn Resource>,
-        allow_list: &HashSet<Box<dyn Resource>>,
+        allow_list: &Vec<Box<dyn Resource>>,
     ) -> Pin<Box<dyn Future<Output = Result<()>>>>;
 }
 
@@ -91,7 +87,7 @@ impl PermissionsBuilder {
     ) -> PermissionsBuilder {
         for (permission_type, resources) in permissions.iter() {
             // Construct resource hashset from allow_list.
-            let allow_list = HashSet::from_iter(resources.into_iter().map(|s| s.clone().into()));
+            let allow_list = Vec::from_iter(resources.iter().map(|s| s.clone().into()));
 
             // Get permission key from permission type.
             let permission_type: Box<dyn PermissionType> = permission_type.clone().into();
@@ -112,20 +108,6 @@ impl PermissionsBuilder {
 // === Impls ===
 
 impl_downcast!(Resource);
-
-impl Eq for Box<dyn Resource> {}
-
-impl PartialEq for Box<dyn Resource> {
-    fn eq(&self, other: &Self) -> bool {
-        self.get_partial_eq(other)
-    }
-}
-
-impl Hash for Box<dyn Resource> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.get_hash(state)
-    }
-}
 
 impl std::fmt::Debug for Box<dyn Resource> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
