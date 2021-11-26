@@ -13,10 +13,10 @@ use deno_core::{
     error::AnyError, include_js_files, op_async, Extension, OpState, Resource, ResourceId,
 };
 
-use crate::permissions::events::EventHTTP;
 use crate::permissions::Permissions;
+use utilities::events::HttpEvent;
 
-pub fn event_http(permissions: Rc<Permissions>) -> Extension {
+pub fn event_http(permissions: Rc<Permissions>, event: HttpEvent) -> Extension {
     let extension = Extension::builder()
         .js(include_js_files!(
             prefix "sys:ext/fs",

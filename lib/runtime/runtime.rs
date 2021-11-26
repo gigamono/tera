@@ -5,7 +5,7 @@ use deno_core::{self, Extension, JsRuntime, ModuleLoader, RuntimeOptions};
 use log::debug;
 use std::{path::PathBuf, rc::Rc};
 use tokio::fs;
-use utilities::result::{Context, Result};
+use utilities::{events::HttpEvent, result::{Context, Result}};
 
 pub struct Runtime(JsRuntime);
 
@@ -20,6 +20,8 @@ impl Runtime {
         extensions: Vec<Extension>,
     ) -> Result<Self> {
         // TODO(appcypher): Add support for memory snapshot after initialisation that can then be reused each time.
+        // TODO(appcypher): SEC: Support specifying maximum_heap_size_in_bytes.
+        // TODO(appcypher): SEC: Add a callback that panics for near_heap_limit_callback.
 
         // Create a new runtime.
         let mut runtime = JsRuntime::new(RuntimeOptions {
@@ -47,7 +49,7 @@ impl Runtime {
         Self::new(module_loader, extensions).await
     }
 
-    pub async fn default_event(permissions: Permissions) -> Result<Self> {
+    pub async fn default_event(permissions: Permissions, event: HttpEvent) -> Result<Self> {
         // TODO(appcypher): There should be a series of snapshots with different combination of extensions. Chosen based on permissions.
         let permissions = Rc::new(permissions);
 
@@ -55,13 +57,17 @@ impl Runtime {
         let module_loader = Rc::new(loaders::esm(permissions.clone()));
         let extensions = vec![
             extensions::fs(permissions.clone()),
-            extensions::event_http(permissions.clone()),
+            extensions::event_http(permissions.clone(), event),
         ];
 
         Self::new(module_loader, extensions).await
     }
 
-    pub async fn execute_module(&mut self, filename: impl Into<&str>, module_code: impl Into<String>) -> Result<()> {
+    pub async fn execute_module(
+        &mut self,
+        filename: impl Into<&str>,
+        module_code: impl Into<String>,
+    ) -> Result<()> {
         let filename = filename.into();
         let module_code = module_code.into();
 
@@ -71,8 +77,6 @@ impl Runtime {
                 r#"resolving main module specifier as "file://{}""#,
                 filename
             ))?;
-
-        println!(">> module specifier {}", module_specifier);
 
         // Load main module and deps.
         let module_id = self
@@ -86,11 +90,16 @@ impl Runtime {
 
         // Wait for message from module eval or event loop.
         tokio::select! {
-            cancellable = &mut rx => {
-                Self::handle_reciever_error(cancellable)?;
+            maybe_result = &mut rx => {
+                Self::handle_reciever_error(maybe_result)?;
+
+                // Continue event loop.
+                self.0.run_event_loop(false).await.context("running the event loop")?;
             }
-            result = self.0.run_event_loop(false) => {
-                result.context("running the event loop")?;
+            event_loop_result = self.0.run_event_loop(false) => {
+                event_loop_result.context("running the event loop")?;
+
+                // Continue waiting on reciever.
                 Self::handle_reciever_error(rx.await)?;
             }
         };
@@ -100,12 +109,12 @@ impl Runtime {
 
     async fn execute_postscripts(runtime: &mut JsRuntime) -> Result<()> {
         // TODO(appcypher): Instead of fetching the postscripts at runtime, we should add them statically at compile time. Embedded in the binary for faster load time. Minified maybe
-        // TODO(appcypher): Also support skipping builtin postcripts and loading new ones at runtime.
+        // TODO(appcypher): Also support skipping builtin postcripts and loading user-specified ones at runtime.
         // Get postcripts directory.
         let postscripts_dir =
             &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("lib/runtime/postscripts");
 
-        // SEC: Blindly assume everything in directory is a postscript.
+        // Blindly assume everything in directory is a postscript.
         let mut postscripts = std::fs::read_dir(postscripts_dir)
             .context(format!(r#"reading postcripts dir "{:?}""#, postscripts_dir))?
             .map(|entry| -> Result<PathBuf> {

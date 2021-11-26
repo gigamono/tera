@@ -8,11 +8,11 @@
 
 `tera` is a lean secure capability-based runtime for JavaScript. It is primarily designed for multi-tenant serverless environment but has uses in other contexts.
 
-`tera` provides a small set of permission-enabled system APIs that you can get started with but you can also create your own permission types and host APIs.
+`tera` provides a small set of permission-enabled system APIs that you can get started with but you can also create your own permission types and bindings.
 
-There is currently no plan to strictly support web-compatible APIs or out-of-the-box typescript compilation. If want those functionalities, you should take a look at [deno](https://github.com/denoland/deno).
+There is currently no plan to strictly support web-compatible APIs or out-of-the-box typescript compilation. If need those functionalities, take a look at [deno](https://github.com/denoland/deno).
 
-`tera` is based on  [deno_core](https://github.com/denoland/deno/tree/main/core) and heavily inspired by [deno](https://github.com/denoland/deno).
+`tera` is heavily inspired by [deno runtime](https://github.com/denoland/deno/tree/main/runtime) and it will include a non-web webassembly runtime like [wasmtime](https://github.com/bytecodealliance/wasmtime) in the future for better security guarantees, no cold start and improved wasm performance.
 
 > Information provided here is for folks working on this package. If your goal is to get started with the Gigamono framework, check the [Gigamono repo](https://github.com/gigamono/gigamono) on how to do that.
 

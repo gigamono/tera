@@ -2,6 +2,7 @@
 
 use super::{PermissionType, PermissionTypeKey, Resource};
 use deno_core::futures::FutureExt;
+use path_clean::PathClean;
 use std::{any::TypeId, future::Future, path::PathBuf, pin::Pin};
 use tokio::fs;
 use utilities::{
@@ -26,17 +27,23 @@ impl FS {
         let err_msg = format!(r#"canonicalizing path for, {:?}"#, filename);
 
         let path = if filename.starts_with("/") {
-            PathBuf::from(filename)
+            // Clean path.
+            PathBuf::from(filename).clean()
         } else if filename.starts_with("../") {
-            fs::canonicalize("../")
-                .await
-                .context(err_msg)?
-                .join(filename)
+            // Canonicalize the part that we are sure exists.
+            let prefix = fs::canonicalize("../").await.context(err_msg)?;
+
+            // Get the remaining suffix.
+            let suffix = filename.strip_prefix("../").unwrap();
+
+            // Join and clean.
+            prefix.join(suffix).clean()
         } else {
-            fs::canonicalize("./")
-                .await
-                .context(err_msg)?
-                .join(filename)
+            // Canonicalize the part that we are sure exists.
+            let prefix = fs::canonicalize("./").await.context(err_msg)?;
+
+            // Join and clean.
+            prefix.join(filename).clean()
         };
 
         Ok(path)
@@ -65,8 +72,7 @@ impl PermissionType for FS {
         let allow_list = allow_list.clone();
 
         async move {
-            // Path resolution is different for FS::Create as filename does not exist yet so we can't simply canonicalize.
-            // Used blocking std::fs here.
+            // Path resolution is different for FS::Create as filename does not exist yet so we can't simply canonicalize on the filename. It will return an error.
             let path = if matches!(permission_type, FS::Create) {
                 Self::resolve_fs_create_path(&filename).await?
             } else {
@@ -83,6 +89,7 @@ impl PermissionType for FS {
 
                 // SEC: Must canonoicalize path before matching.
                 let canon_dir = fs::canonicalize(&allowed_dir).await?;
+
                 if path.starts_with(canon_dir) {
                     found = true;
                     break;

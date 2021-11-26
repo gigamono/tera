@@ -1,5 +1,3 @@
-// Copyright 2021 the Gigamono authors. All rights reserved. Apache 2.0 license.
-
 use downcast_rs::{impl_downcast, Downcast};
 use std::any::{type_name, TypeId};
 use std::cmp::Eq;

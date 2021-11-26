@@ -14,7 +14,7 @@
 // use utilities::{errors, result::Result};
 
 #[derive(Debug, Copy, Clone)]
-pub enum EventHTTP {
+pub enum HttpEvent {
     Recieve,
     Respond,
 }
