@@ -1,34 +1,22 @@
 // Copyright 2021 the Gigamono authors. All rights reserved. Apache 2.0 license.
 
-use crate::{extensions, loaders, permissions::Permissions};
-use deno_core::{self, Extension, JsRuntime, ModuleLoader, RuntimeOptions};
+use crate::{RuntimeOptions, events::Events, extensions, loaders, permissions::Permissions};
+use deno_core::JsRuntime;
 use log::debug;
 use std::{path::PathBuf, rc::Rc};
 use tokio::fs;
-use utilities::{events::HttpEvent, result::{Context, Result}};
+use utilities::result::{Context, Result};
 
 pub struct Runtime(JsRuntime);
 
-pub struct Source {
-    pub filename: String,
-    pub code: String,
-}
-
 impl Runtime {
-    pub async fn new(
-        module_loader: Rc<dyn ModuleLoader>,
-        extensions: Vec<Extension>,
-    ) -> Result<Self> {
+    pub async fn new(options: RuntimeOptions) -> Result<Self> {
         // TODO(appcypher): Add support for memory snapshot after initialisation that can then be reused each time.
         // TODO(appcypher): SEC: Support specifying maximum_heap_size_in_bytes.
         // TODO(appcypher): SEC: Add a callback that panics for near_heap_limit_callback.
 
         // Create a new runtime.
-        let mut runtime = JsRuntime::new(RuntimeOptions {
-            module_loader: Some(module_loader),
-            extensions,
-            ..Default::default()
-        });
+        let mut runtime = JsRuntime::new(options);
 
         // Execute postscripts.
         Self::execute_postscripts(&mut runtime).await?;
@@ -42,33 +30,39 @@ impl Runtime {
         // TODO(appcypher): There should be a series of snapshots with different combination of extensions. Chosen based on permissions.
         let permissions = Rc::new(permissions);
 
-        // Create default module loader and extensions.
-        let module_loader = Rc::new(loaders::esm(permissions.clone()));
-        let extensions = vec![extensions::fs(permissions.clone())];
+        // Set runtime options
+        let opts = RuntimeOptions {
+            module_loader: Some(Rc::new(loaders::esm(permissions.clone()))),
+            extensions: vec![extensions::fs(permissions.clone())],
+            ..Default::default()
+        };
 
-        Self::new(module_loader, extensions).await
+        Self::new(opts).await
     }
 
-    pub async fn default_event(permissions: Permissions, event: HttpEvent) -> Result<Self> {
+    pub async fn default_event(permissions: Permissions, events: Rc<Events>) -> Result<Self> {
         // TODO(appcypher): There should be a series of snapshots with different combination of extensions. Chosen based on permissions.
         let permissions = Rc::new(permissions);
 
-        // Create default module loader and extensions.
-        let module_loader = Rc::new(loaders::esm(permissions.clone()));
-        let extensions = vec![
-            extensions::fs(permissions.clone()),
-            extensions::event_http(permissions.clone(), event),
-        ];
+        // Set runtime options
+        let opts = RuntimeOptions {
+            module_loader: Some(Rc::new(loaders::esm(permissions.clone()))),
+            extensions: vec![
+                extensions::fs(permissions.clone()),
+                extensions::event_http(permissions.clone(), events),
+            ],
+            ..Default::default()
+        };
 
-        Self::new(module_loader, extensions).await
+        Self::new(opts).await
     }
 
     pub async fn execute_module(
         &mut self,
-        filename: impl Into<&str>,
+        filename: impl AsRef<str>,
         module_code: impl Into<String>,
     ) -> Result<()> {
-        let filename = filename.into();
+        let filename = filename.as_ref();
         let module_code = module_code.into();
 
         // Add file scheme to filename and resolve to URL.

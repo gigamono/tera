@@ -2,21 +2,15 @@
 
 // TODO(appcypher): Synchronisation needed with fcntl. Also applies to db.
 // https://blog.cloudflare.com/durable-objects-easy-fast-correct-choose-three/
-use serde::Deserialize;
 use std::cell::RefCell;
 use std::rc::Rc;
-use tokio::fs::{self, File, OpenOptions};
-use tokio::io::AsyncWriteExt;
-use utilities::errors;
 
-use deno_core::{
-    error::AnyError, include_js_files, op_async, Extension, OpState, Resource, ResourceId,
-};
+use deno_core::{error::AnyError, include_js_files, op_async, Extension, OpState};
 
+use crate::events::Events;
 use crate::permissions::Permissions;
-use utilities::events::HttpEvent;
 
-pub fn event_http(permissions: Rc<Permissions>, event: HttpEvent) -> Extension {
+pub fn event_http(permissions: Rc<Permissions>, events: Rc<Events>) -> Extension {
     let extension = Extension::builder()
         .js(include_js_files!(
             prefix "sys:ext/fs",
@@ -27,7 +21,13 @@ pub fn event_http(permissions: Rc<Permissions>, event: HttpEvent) -> Extension {
             op_async(op_add_event_listener),
         )])
         .state(move |state| {
-            state.put(permissions.clone());
+            if !state.has::<Permissions>() {
+                state.put(permissions.clone());
+            }
+
+            if !state.has::<Events>() {
+                state.put(events.clone());
+            }
             Ok(())
         })
         .build();

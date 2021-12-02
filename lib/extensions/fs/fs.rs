@@ -29,7 +29,9 @@ pub fn fs(permissions: Rc<Permissions>) -> Extension {
             ("op_fs_seek", op_async(op_fs_seek)),
         ])
         .state(move |state| {
-            state.put(permissions.clone());
+            if !state.has::<Permissions>() {
+                state.put(permissions.clone());
+            }
             Ok(())
         })
         .build();
@@ -102,7 +104,7 @@ async fn op_open(
     let rid = state.borrow_mut().resource_table.add(FileResource {
         file: AsyncRefCell::new(file),
         path: path.into(),
-        options, 
+        options,
     });
 
     Ok(rid)

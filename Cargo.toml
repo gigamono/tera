@@ -25,3 +25,8 @@ path-clean = "0.1.0"
 [lib]
 name = "tera"
 path = "lib/lib.rs"
+
+[features]
+default = ["perms"]
+perms = [] # TODO(appcypher): Add compile-time conditionals around permissions
+

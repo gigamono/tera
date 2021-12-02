@@ -3,6 +3,7 @@
 pub mod extensions;
 pub mod loaders;
 pub mod permissions;
+pub mod events;
 mod runtime;
 
 pub use runtime::*;
