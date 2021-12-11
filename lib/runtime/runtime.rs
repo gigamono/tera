@@ -1,16 +1,16 @@
 // Copyright 2021 the Gigamono authors. All rights reserved. Apache 2.0 license.
 
-use crate::{RuntimeOptions, events::Events, extensions, loaders, permissions::Permissions};
+use crate::{events::Events, extensions, loaders, permissions::Permissions, RuntimeOptions};
 use deno_core::JsRuntime;
 use log::debug;
-use std::{path::PathBuf, rc::Rc};
+use std::{cell::RefCell, path::PathBuf, rc::Rc};
 use tokio::fs;
 use utilities::result::{Context, Result};
 
 pub struct Runtime(JsRuntime);
 
 impl Runtime {
-    pub async fn new(options: RuntimeOptions) -> Result<Self> {
+    async fn new(options: RuntimeOptions) -> Result<Self> {
         // TODO(appcypher): Add support for memory snapshot after initialisation that can then be reused each time.
         // TODO(appcypher): SEC: Support specifying maximum_heap_size_in_bytes.
         // TODO(appcypher): SEC: Add a callback that panics for near_heap_limit_callback.
@@ -40,7 +40,7 @@ impl Runtime {
         Self::new(opts).await
     }
 
-    pub async fn default_event(permissions: Permissions, events: Rc<Events>) -> Result<Self> {
+    pub async fn default_event(permissions: Permissions, events: Rc<RefCell<Events>>) -> Result<Self> {
         // TODO(appcypher): There should be a series of snapshots with different combination of extensions. Chosen based on permissions.
         let permissions = Rc::new(permissions);
 
@@ -83,6 +83,7 @@ impl Runtime {
         let mut rx = self.0.mod_evaluate(module_id);
 
         // Wait for message from module eval or event loop.
+        // TODO(appcypher): Test that unawaited async ops are not getting executed in js. open, fs_write for example.
         tokio::select! {
             maybe_result = &mut rx => {
                 Self::handle_reciever_error(maybe_result)?;

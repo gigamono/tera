@@ -21,6 +21,8 @@ tokio = { version = "1", features = ["full"] }
 log = "0.4.14"
 downcast-rs = "1.2.0"
 path-clean = "0.1.0"
+regex = "1.5.4"
+futures-util = "0.3.18"
 
 [lib]
 name = "tera"

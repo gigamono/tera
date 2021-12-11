@@ -1,3 +1,5 @@
+// Copyright 2021 the Gigamono authors. All rights reserved. Apache 2.0 license.
+
 use downcast_rs::{impl_downcast, Downcast};
 use std::any::{type_name, TypeId};
 use std::cmp::Eq;
@@ -6,9 +8,10 @@ use std::fmt::Debug;
 use std::future::Future;
 use std::iter::FromIterator;
 use std::pin::Pin;
+use std::rc::Rc;
 use utilities::{errors, result::Result};
 
-type PermissionMap = BTreeMap<PermissionTypeKey, Vec<Box<dyn Resource>>>;
+type PermissionMap = BTreeMap<PermissionTypeKey, Rc<Vec<Box<dyn Resource>>>>;
 
 pub trait Resource: Downcast {
     fn get_debug(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result;
@@ -30,10 +33,19 @@ pub trait PermissionType: std::fmt::Debug {
 
     fn check(
         &self,
-        permission_key: &PermissionTypeKey,
-        resource: &Box<dyn Resource>,
-        allow_list: &Vec<Box<dyn Resource>>,
-    ) -> Pin<Box<dyn Future<Output = Result<()>>>>;
+        _resource: &Box<dyn Resource>,
+        _allow_list: Rc<Vec<Box<dyn Resource>>>,
+    ) -> Pin<Box<dyn Future<Output = Result<()>>>> {
+        unimplemented!()
+    }
+
+    fn check_sync(
+        &self,
+        _resource: &Box<dyn Resource>,
+        _allow_list: Rc<Vec<Box<dyn Resource>>>,
+    ) -> Result<()> {
+        unimplemented!()
+    }
 }
 
 #[derive(Default, Debug)]
@@ -57,19 +69,33 @@ impl Permissions {
 
         // Check permission type exists.
         match self.0.get(permission_key) {
-            None => errors::permission_error(format!(
+            None => errors::permission_error_t(format!(
                 r#"permission type "{}" does not exist for file {:?}"#,
                 permission.get_type(),
                 resource
-            ))?,
-            Some(allow_list) => {
-                permission
-                    .check(permission_key, &resource, &allow_list)
-                    .await?
-            }
+            )),
+            Some(allow_list) => permission.check(&resource, Rc::clone(allow_list)).await,
         }
+    }
 
-        Ok(())
+    pub fn check_sync(
+        &self,
+        permission: impl Into<Box<dyn PermissionType>>,
+        resource: impl Into<Box<dyn Resource>>,
+    ) -> Result<()> {
+        let permission = &permission.into();
+        let permission_key = &permission.get_key();
+        let resource = &resource.into();
+
+        // Check permission type exists.
+        match self.0.get(permission_key) {
+            None => errors::permission_error_t(format!(
+                r#"permission type "{}" does not exist for file {:?}"#,
+                permission.get_type(),
+                resource
+            )),
+            Some(allow_list) => permission.check_sync(&resource, Rc::clone(allow_list)),
+        }
     }
 }
 
@@ -94,7 +120,7 @@ impl PermissionsBuilder {
             let permission_key = permission_type.get_key();
 
             // Add permission type.
-            self.0.insert(permission_key, allow_list);
+            self.0.insert(permission_key, Rc::new(allow_list));
         }
 
         self

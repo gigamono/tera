@@ -6,7 +6,7 @@ use utilities::{errors, result::Context};
 use deno_core::{futures::FutureExt, ModuleLoader, ModuleSource};
 
 use crate::permissions::{
-    fs::{PathString, FS},
+    fs::{FilePathString, FS},
     Permissions,
 };
 
@@ -47,7 +47,7 @@ impl ModuleLoader for ESMLoader {
             // We only support "file" scheme for now.
             let module_scheme = module_specifier.scheme();
             if module_scheme != "file" {
-                errors::any_error(format!(
+                errors::new_error_t(format!(
                     r#"unsupported URL scheme in import "{}""#,
                     module_scheme
                 ))?;
@@ -61,7 +61,7 @@ impl ModuleLoader for ESMLoader {
 
             // Check permissions.
             permissions
-                .check(FS::Read, PathString(module_path.into()))
+                .check(FS::Import, FilePathString(module_path.into()))
                 .await?;
 
             // Fetch module source.

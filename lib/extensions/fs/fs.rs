@@ -1,7 +1,6 @@
 // Copyright 2021 the Gigamono authors. All rights reserved. Apache 2.0 license.
 // TODO(appcypher): Synchronisation needed with fcntl. Also applies to db. https://blog.cloudflare.com/durable-objects-easy-fast-correct-choose-three/
 
-use deno_core::error::type_error;
 use deno_core::{
     error::AnyError, include_js_files, op_async, Extension, OpState, Resource, ResourceId,
 };
@@ -12,8 +11,9 @@ use std::io::SeekFrom;
 use std::rc::Rc;
 use tokio::fs::{File, OpenOptions};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
+use utilities::errors;
 
-use crate::permissions::fs::{PathString, FS};
+use crate::permissions::fs::{FilePathString, FS};
 use crate::permissions::Permissions;
 
 pub fn fs(permissions: Rc<Permissions>) -> Extension {
@@ -30,8 +30,9 @@ pub fn fs(permissions: Rc<Permissions>) -> Extension {
         ])
         .state(move |state| {
             if !state.has::<Permissions>() {
-                state.put(permissions.clone());
+                state.put(Rc::clone(&permissions));
             }
+
             Ok(())
         })
         .build();
@@ -40,19 +41,19 @@ pub fn fs(permissions: Rc<Permissions>) -> Extension {
 }
 
 #[derive(Debug)]
-pub struct FileResource {
-    pub file: AsyncRefCell<File>,
-    pub path: String,
-    pub options: FileOptions,
+struct FileResource {
+    file: AsyncRefCell<File>,
+    path: String,
+    options: FileOptions,
 }
 
 #[derive(Deserialize, Default, Debug)]
-pub struct FileOptions {
-    pub write: bool,
-    pub read: bool,
-    pub append: bool,
-    pub create: bool,
-    pub truncate: bool,
+struct FileOptions {
+    write: bool,
+    read: bool,
+    append: bool,
+    create: bool,
+    truncate: bool,
 }
 
 impl Resource for FileResource {}
@@ -62,19 +63,22 @@ async fn op_open(
     path: String,
     options: FileOptions,
 ) -> Result<ResourceId, AnyError> {
+    // TODO(appcypher): SEC: Support root prefix for path.
     let path = &path;
 
     // We use OS-supported permissions for files. Permissions are added on file open/creation.
-    let permissions = state.borrow().borrow::<Rc<Permissions>>().clone();
+    let permissions = Rc::clone(state.borrow().borrow::<Rc<Permissions>>());
 
     // Check create permission.
     if options.create {
         permissions
-            .check(FS::Create, PathString(path.into()))
+            .check(FS::Create, FilePathString(path.into()))
             .await?;
     } else {
         // Check open permission.
-        permissions.check(FS::Open, PathString(path.into())).await?;
+        permissions
+            .check(FS::Open, FilePathString(path.into()))
+            .await?;
     }
 
     // Open file with options specified.
@@ -90,13 +94,15 @@ async fn op_open(
     // We move open, read, write permission checks here because if file does not exist yet, canonicalising won't work in permission checks.
     // Check read permission.
     if options.read {
-        permissions.check(FS::Read, PathString(path.into())).await?;
+        permissions
+            .check(FS::Read, FilePathString(path.into()))
+            .await?;
     }
 
     // Check write permission.
     if options.write {
         permissions
-            .check(FS::Write, PathString(path.into()))
+            .check(FS::Write, FilePathString(path.into()))
             .await?;
     }
 
@@ -116,15 +122,10 @@ async fn op_fs_write(
     buf: ZeroCopyBuf,
 ) -> Result<usize, AnyError> {
     // SEC: No permission check because each file is opened with OS-supported perms.
-    // TODO: Document. Also why unwrap?
-    let resource = state
-        .borrow()
-        .resource_table
-        .get::<FileResource>(rid)?
-        .clone();
+    let resource = state.borrow().resource_table.get::<FileResource>(rid)?;
 
-    let file_borrow = RcRef::map(&resource, |f| &f.file).try_borrow_mut();
-    let mut file = file_borrow.unwrap().try_clone().await?;
+    let mut file_rc = RcRef::map(&resource, |f| &f.file).borrow_mut().await;
+    let file = file_rc.as_mut();
 
     // Write to file.
     let total_written = file.write(&buf[..]).await?;
@@ -141,15 +142,10 @@ async fn op_fs_read(
     mut buf: ZeroCopyBuf,
 ) -> Result<usize, AnyError> {
     // SEC: No permission check because each file is opened with OS-supported perms.
-    // TODO: Document. Also why unwrap?
-    let resource = state
-        .borrow()
-        .resource_table
-        .get::<FileResource>(rid)?
-        .clone();
+    let resource = state.borrow().resource_table.get::<FileResource>(rid)?;
 
-    let file_borrow = RcRef::map(&resource, |f| &f.file).try_borrow_mut();
-    let mut file = file_borrow.unwrap().try_clone().await?;
+    let mut file_rc = RcRef::map(&resource, |f| &f.file).borrow_mut().await;
+    let file = file_rc.as_mut();
 
     // Read from file.
     let total_written = file.read(&mut buf[..]).await?;
@@ -169,27 +165,17 @@ async fn op_fs_seek(
     args: SeekArgs,
 ) -> Result<u64, AnyError> {
     // SEC: No permission check because each file is opened with OS-supported perms.
-    // TODO: Document. Also why unwrap?
-    let resource = state
-        .borrow()
-        .resource_table
-        .get::<FileResource>(rid)?
-        .clone();
+    let resource = state.borrow().resource_table.get::<FileResource>(rid)?;
 
-    let file_borrow = RcRef::map(&resource, |f| &f.file).try_borrow_mut();
-    let mut file = file_borrow.unwrap().try_clone().await?;
+    let mut file_rc = RcRef::map(&resource, |f| &f.file).borrow_mut().await;
+    let file = file_rc.as_mut();
 
     let seek = {
         match args.whence {
             0 => SeekFrom::Start(args.offset as u64),
             1 => SeekFrom::Start(args.offset as u64),
             2 => SeekFrom::Start(args.offset as u64),
-            _ => {
-                return Err(type_error(format!(
-                    r#"invalid whence value "{}""#,
-                    args.whence
-                )))
-            }
+            _ => return errors::type_error_t(format!(r#"invalid whence value "{}""#, args.whence)),
         }
     };
 
