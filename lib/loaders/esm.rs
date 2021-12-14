@@ -6,7 +6,7 @@ use utilities::{errors, result::Context};
 use deno_core::{futures::FutureExt, ModuleLoader, ModuleSource};
 
 use crate::permissions::{
-    fs::{FilePathString, FS},
+    fs::{Path, FS},
     Permissions,
 };
 
@@ -61,8 +61,7 @@ impl ModuleLoader for ESMLoader {
 
             // Check permissions.
             permissions
-                .check(FS::Import, FilePathString(module_path.into()))
-                .await?;
+                .check(FS::Import, Path(module_path.into()))?;
 
             // Fetch module source.
             let code = fs::read_to_string(module_path)

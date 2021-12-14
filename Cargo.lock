@@ -1291,12 +1291,14 @@ version = "0.1.0"
 dependencies = [
  "deno_core",
  "downcast-rs",
+ "futures-core",
  "futures-util",
  "log",
  "path-clean",
  "regex",
  "serde",
  "tokio",
+ "tokio-util",
  "utilities",
 ]
 
@@ -1354,9 +1356,11 @@ checksum = "9e99e1983e5d376cd8eb4b66604d2e99e79f5bd988c3055891dcd8c9e2604cc0"
 dependencies = [
  "bytes",
  "futures-core",
+ "futures-io",
  "futures-sink",
  "log",
  "pin-project-lite",
+ "slab",
  "tokio",
 ]
 

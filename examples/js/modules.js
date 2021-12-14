@@ -4,5 +4,5 @@ import { Rectangle } from "./shapes.js";
 
 let rect = new Rectangle(5, 40);
 
-sys.core.print(`area = ${rect.area()}\n`);
-sys.core.print(`perimeter = ${rect.perimeter()}\n`);
+log.info("area =", rect.area());
+log.info("perimeter =", rect.perimeter());

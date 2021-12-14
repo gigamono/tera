@@ -5,9 +5,7 @@ use std::any::{type_name, TypeId};
 use std::cmp::Eq;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
-use std::future::Future;
 use std::iter::FromIterator;
-use std::pin::Pin;
 use std::rc::Rc;
 use utilities::{errors, result::Result};
 
@@ -16,6 +14,10 @@ type PermissionMap = BTreeMap<PermissionTypeKey, Rc<Vec<Box<dyn Resource>>>>;
 pub trait Resource: Downcast {
     fn get_debug(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result;
     fn get_clone(&self) -> Box<dyn Resource>;
+}
+
+pub trait State: Downcast {
+    fn get_debug(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result;
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -31,34 +33,35 @@ pub trait PermissionType: std::fmt::Debug {
         format!("{}::{:?}", type_name::<Self>(), self)
     }
 
+    fn map(&self, allow_list: Vec<Box<dyn Resource>>) -> Result<Vec<Box<dyn Resource>>> {
+        Ok(allow_list)
+    }
+
     fn check(
         &self,
         _resource: &Box<dyn Resource>,
         _allow_list: Rc<Vec<Box<dyn Resource>>>,
-    ) -> Pin<Box<dyn Future<Output = Result<()>>>> {
-        unimplemented!()
-    }
-
-    fn check_sync(
-        &self,
-        _resource: &Box<dyn Resource>,
-        _allow_list: Rc<Vec<Box<dyn Resource>>>,
-    ) -> Result<()> {
-        unimplemented!()
-    }
+        _state: &Option<Box<dyn State>>,
+    ) -> Result<()>;
 }
 
 #[derive(Default, Debug)]
-pub struct Permissions(PermissionMap);
+pub struct Permissions {
+    map: PermissionMap,
+    state: Option<Box<dyn State>>,
+}
 
-pub struct PermissionsBuilder(pub(super) PermissionMap);
+pub struct PermissionsBuilder {
+    pub(super) map: PermissionMap,
+    pub(super) state: Option<Box<dyn State>>,
+}
 
 impl Permissions {
     pub fn builder() -> PermissionsBuilder {
         PermissionsBuilder::new()
     }
 
-    pub async fn check(
+    pub fn check(
         &self,
         permission: impl Into<Box<dyn PermissionType>>,
         resource: impl Into<Box<dyn Resource>>,
@@ -68,40 +71,28 @@ impl Permissions {
         let resource = &resource.into();
 
         // Check permission type exists.
-        match self.0.get(permission_key) {
+        match self.map.get(permission_key) {
             None => errors::permission_error_t(format!(
                 r#"permission type "{}" does not exist for file {:?}"#,
                 permission.get_type(),
                 resource
             )),
-            Some(allow_list) => permission.check(&resource, Rc::clone(allow_list)).await,
-        }
-    }
-
-    pub fn check_sync(
-        &self,
-        permission: impl Into<Box<dyn PermissionType>>,
-        resource: impl Into<Box<dyn Resource>>,
-    ) -> Result<()> {
-        let permission = &permission.into();
-        let permission_key = &permission.get_key();
-        let resource = &resource.into();
-
-        // Check permission type exists.
-        match self.0.get(permission_key) {
-            None => errors::permission_error_t(format!(
-                r#"permission type "{}" does not exist for file {:?}"#,
-                permission.get_type(),
-                resource
-            )),
-            Some(allow_list) => permission.check_sync(&resource, Rc::clone(allow_list)),
+            Some(allow_list) => permission.check(&resource, Rc::clone(allow_list), &self.state),
         }
     }
 }
 
 impl PermissionsBuilder {
     pub fn new() -> Self {
-        Self(BTreeMap::new())
+        Self {
+            map: BTreeMap::new(),
+            state: None,
+        }
+    }
+
+    pub fn add_state(mut self, state: impl Into<Box<dyn State>>) -> Self {
+        self.state = Some(state.into());
+        self
     }
 
     pub fn add_permissions(
@@ -110,7 +101,7 @@ impl PermissionsBuilder {
             impl Into<Box<dyn PermissionType>> + Clone,
             &[impl Into<Box<dyn Resource>> + Clone],
         )],
-    ) -> PermissionsBuilder {
+    ) -> Result<Self> {
         for (permission_type, resources) in permissions.iter() {
             // Construct resource hashset from allow_list.
             let allow_list = Vec::from_iter(resources.iter().map(|s| s.clone().into()));
@@ -119,21 +110,29 @@ impl PermissionsBuilder {
             let permission_type: Box<dyn PermissionType> = permission_type.clone().into();
             let permission_key = permission_type.get_key();
 
+            // Do possibly custom stuff on allow list before saving.
+            let allow_list = permission_type.map(allow_list)?;
+
             // Add permission type.
-            self.0.insert(permission_key, Rc::new(allow_list));
+            self.map.insert(permission_key, Rc::new(allow_list));
         }
 
-        self
+        Ok(self)
     }
 
     pub fn build(self) -> Permissions {
-        Permissions(self.0)
+        Permissions {
+            map: self.map,
+            state: self.state,
+        }
     }
 }
 
 // === Impls ===
 
 impl_downcast!(Resource);
+
+impl_downcast!(State);
 
 impl std::fmt::Debug for Box<dyn Resource> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -144,5 +143,11 @@ impl std::fmt::Debug for Box<dyn Resource> {
 impl Clone for Box<dyn Resource> {
     fn clone(&self) -> Self {
         self.get_clone()
+    }
+}
+
+impl std::fmt::Debug for Box<dyn State> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.get_debug(f)
     }
 }

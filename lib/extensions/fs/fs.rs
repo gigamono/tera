@@ -1,6 +1,7 @@
 // Copyright 2021 the Gigamono authors. All rights reserved. Apache 2.0 license.
 // TODO(appcypher): Synchronisation needed with fcntl. Also applies to db. https://blog.cloudflare.com/durable-objects-easy-fast-correct-choose-three/
 
+use deno_core::anyhow::Context;
 use deno_core::{
     error::AnyError, include_js_files, op_async, Extension, OpState, Resource, ResourceId,
 };
@@ -13,17 +14,17 @@ use tokio::fs::{File, OpenOptions};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use utilities::errors;
 
-use crate::permissions::fs::{FilePathString, FS};
+use crate::permissions::fs::{Path, FS};
 use crate::permissions::Permissions;
 
 pub fn fs(permissions: Rc<Permissions>) -> Extension {
     let extension = Extension::builder()
         .js(include_js_files!(
-            prefix "sys:ext/fs",
+            prefix "(tera:extensions) ",
             "lib/extensions/fs/01_fs.js",
         ))
         .ops(vec![
-            ("op_open", op_async(op_open)),
+            ("op_fs_open", op_async(op_fs_open)),
             ("op_fs_write", op_async(op_fs_write)),
             ("op_fs_read", op_async(op_fs_read)),
             ("op_fs_seek", op_async(op_fs_seek)),
@@ -58,7 +59,7 @@ struct FileOptions {
 
 impl Resource for FileResource {}
 
-async fn op_open(
+async fn op_fs_open(
     state: Rc<RefCell<OpState>>,
     path: String,
     options: FileOptions,
@@ -71,15 +72,23 @@ async fn op_open(
 
     // Check create permission.
     if options.create {
-        permissions
-            .check(FS::Create, FilePathString(path.into()))
-            .await?;
+        permissions.check(FS::Create, Path::from(path))?;
     } else {
         // Check open permission.
-        permissions
-            .check(FS::Open, FilePathString(path.into()))
-            .await?;
+        permissions.check(FS::Open, Path::from(path))?;
     }
+
+    // Check read permission.
+    if options.read {
+        permissions.check(FS::Read, Path::from(path))?;
+    }
+
+    // Check write permission.
+    if options.write {
+        permissions.check(FS::Write, Path::from(path))?;
+    }
+
+    println!(">>> options = {:?}", options);
 
     // Open file with options specified.
     let file = OpenOptions::new()
@@ -89,22 +98,8 @@ async fn op_open(
         .truncate(options.truncate)
         .create(options.create)
         .open(path)
-        .await?;
-
-    // We move open, read, write permission checks here because if file does not exist yet, canonicalising won't work in permission checks.
-    // Check read permission.
-    if options.read {
-        permissions
-            .check(FS::Read, FilePathString(path.into()))
-            .await?;
-    }
-
-    // Check write permission.
-    if options.write {
-        permissions
-            .check(FS::Write, FilePathString(path.into()))
-            .await?;
-    }
+        .await
+        .context("opening and/or creating file")?;
 
     // Save file info for later.
     let rid = state.borrow_mut().resource_table.add(FileResource {
@@ -148,9 +143,9 @@ async fn op_fs_read(
     let file = file_rc.as_mut();
 
     // Read from file.
-    let total_written = file.read(&mut buf[..]).await?;
+    let total_read = file.read(&mut buf[..]).await?;
 
-    Ok(total_written)
+    Ok(total_read)
 }
 
 #[derive(Deserialize, Debug)]

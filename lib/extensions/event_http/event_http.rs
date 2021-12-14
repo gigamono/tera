@@ -1,15 +1,20 @@
 // Copyright 2021 the Gigamono authors. All rights reserved. Apache 2.0 license.
 
 use crate::events::Events;
-use crate::permissions::events::{HttpEvent, UrlPathString};
+use crate::permissions::events::event_http::{HttpEvent, Path};
 use crate::permissions::Permissions;
 use deno_core::{error::AnyError, include_js_files, op_async, Extension, OpState};
-use deno_core::{op_sync, ZeroCopyBuf};
+use deno_core::{op_sync, Resource, ResourceId, ZeroCopyBuf};
+use futures_util::Stream;
 use std::cell::RefCell;
 use std::convert::TryFrom;
 use std::mem;
+use std::pin::Pin;
 use std::rc::Rc;
 use std::str::FromStr;
+use std::task::{Context, Poll};
+use tokio::io::AsyncReadExt;
+use tokio_util::io::StreamReader;
 use utilities::errors;
 use utilities::http::body::{Bytes, HttpBody};
 use utilities::http::header::{HeaderName, HeaderValue};
@@ -18,34 +23,69 @@ use utilities::http::{Body, Response, StatusCode, Version};
 pub fn event_http(permissions: Rc<Permissions>, events: Rc<RefCell<Events>>) -> Extension {
     let extension = Extension::builder()
         .js(include_js_files!(
-            prefix "sys:ext/fs",
-            "lib/extensions/fs/01_event_http.js",
+            prefix "(tera:extensions) ",
+            "lib/extensions/event_http/01_event_http.js",
         ))
         .ops(vec![
             // Request.
-            ("op_get_request_header", op_sync(op_get_request_header)),
-            ("op_set_request_header", op_sync(op_set_request_header)),
             (
-                "op_get_request_uri_scheme",
-                op_sync(op_get_request_uri_scheme),
+                "op_ev_get_request_header",
+                op_sync(op_ev_get_request_header),
             ),
             (
-                "op_get_request_uri_authority",
-                op_sync(op_get_request_uri_authority),
+                "op_ev_set_request_header",
+                op_sync(op_ev_set_request_header),
             ),
-            ("op_get_request_uri_path", op_sync(op_get_request_uri_path)),
             (
-                "op_get_request_uri_query",
-                op_sync(op_get_request_uri_query),
+                "op_ev_get_request_uri_scheme",
+                op_sync(op_ev_get_request_uri_scheme),
             ),
-            ("op_get_request_method", op_sync(op_get_request_method)),
-            ("op_read_request_body", op_async(op_read_request_body)),
+            (
+                "op_ev_get_request_uri_authority",
+                op_sync(op_ev_get_request_uri_authority),
+            ),
+            (
+                "op_ev_get_request_uri_path",
+                op_sync(op_ev_get_request_uri_path),
+            ),
+            (
+                "op_ev_get_request_uri_query",
+                op_sync(op_ev_get_request_uri_query),
+            ),
+            (
+                "op_ev_get_request_method",
+                op_sync(op_ev_get_request_method),
+            ),
+            (
+                "op_ev_get_request_body_size_hint",
+                op_sync(op_ev_get_request_body_size_hint),
+            ),
+            (
+                "op_ev_get_request_body_stream",
+                op_sync(op_ev_get_request_body_stream),
+            ),
+            (
+                "op_ev_read_request_body_chunk",
+                op_async(op_ev_read_request_body_chunk),
+            ),
             // Response.
-            ("op_set_response_header", op_sync(op_set_response_header)),
-            ("op_set_response_status", op_sync(op_set_response_status)),
-            ("op_set_response_version", op_sync(op_set_response_version)),
-            ("op_write_response_body", op_sync(op_write_response_body)),
-            ("op_send_response", op_async(op_send_response)),
+            (
+                "op_ev_set_response_header",
+                op_sync(op_ev_set_response_header),
+            ),
+            (
+                "op_ev_set_response_status",
+                op_sync(op_ev_set_response_status),
+            ),
+            (
+                "op_ev_set_response_version",
+                op_sync(op_ev_set_response_version),
+            ),
+            (
+                "op_ev_write_response_body",
+                op_sync(op_ev_write_response_body),
+            ),
+            ("op_ev_send_response", op_async(op_ev_send_response)),
         ])
         .state(move |state| {
             if !state.has::<Permissions>() {
@@ -63,7 +103,28 @@ pub fn event_http(permissions: Rc<Permissions>, events: Rc<RefCell<Events>>) -> 
     extension
 }
 
-fn op_get_request_header(state: &mut OpState, key: String, _: ()) -> Result<Vec<u8>, AnyError> {
+struct BodyStream(Body);
+
+impl Stream for BodyStream {
+    type Item = Result<Bytes, std::io::Error>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        match futures_core::ready!(Pin::new(&mut self.0).poll_next(cx)) {
+            Some(Ok(chunk)) => Poll::Ready(Some(Ok(chunk))),
+            Some(Err(err)) => Poll::Ready(Some(Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                err,
+            )))),
+            None => Poll::Ready(None),
+        }
+    }
+}
+
+struct StreamReaderResource(RefCell<StreamReader<BodyStream, Bytes>>);
+
+impl Resource for StreamReaderResource {}
+
+fn op_ev_get_request_header(state: &mut OpState, key: String, _: ()) -> Result<Vec<u8>, AnyError> {
     let events_rc = Rc::clone(state.borrow::<Rc<RefCell<Events>>>());
     let events = events_rc.borrow();
 
@@ -75,7 +136,7 @@ fn op_get_request_header(state: &mut OpState, key: String, _: ()) -> Result<Vec<
 
     // Check read permission.
     let permissions = Rc::clone(state.borrow::<Rc<Permissions>>());
-    permissions.check_sync(HttpEvent::ReadRequest, UrlPathString::from(path))?;
+    permissions.check(HttpEvent::ReadRequest, Path::from(path))?;
 
     // Get the value of request header.
     let value = match request.headers().get(&key) {
@@ -86,7 +147,7 @@ fn op_get_request_header(state: &mut OpState, key: String, _: ()) -> Result<Vec<
     Ok(value)
 }
 
-fn op_set_request_header(
+fn op_ev_set_request_header(
     state: &mut OpState,
     key: String,
     value: String,
@@ -102,7 +163,7 @@ fn op_set_request_header(
 
     // Check modify permission.
     let permissions = Rc::clone(state.borrow::<Rc<Permissions>>());
-    permissions.check_sync(HttpEvent::ModifyRequest, UrlPathString::from(path))?;
+    permissions.check(HttpEvent::ModifyRequest, Path::from(path))?;
 
     // Set header.
     let optional = request
@@ -112,7 +173,7 @@ fn op_set_request_header(
     Ok(optional.map(|_| value))
 }
 
-fn op_get_request_uri_scheme(
+fn op_ev_get_request_uri_scheme(
     state: &mut OpState,
     _: (),
     _: (),
@@ -128,7 +189,7 @@ fn op_get_request_uri_scheme(
 
     // Check read permission.
     let permissions = Rc::clone(state.borrow::<Rc<Permissions>>());
-    permissions.check_sync(HttpEvent::ReadRequest, UrlPathString::from(path))?;
+    permissions.check(HttpEvent::ReadRequest, Path::from(path))?;
 
     // Get the value of request scheme.
     let authority = request.uri().scheme();
@@ -136,7 +197,7 @@ fn op_get_request_uri_scheme(
     Ok(authority.map(|v| v.to_string()))
 }
 
-fn op_get_request_uri_authority(
+fn op_ev_get_request_uri_authority(
     state: &mut OpState,
     _: (),
     _: (),
@@ -152,7 +213,7 @@ fn op_get_request_uri_authority(
 
     // Check read permission.
     let permissions = Rc::clone(state.borrow::<Rc<Permissions>>());
-    permissions.check_sync(HttpEvent::ReadRequest, UrlPathString::from(path))?;
+    permissions.check(HttpEvent::ReadRequest, Path::from(path))?;
 
     // Get the value of request authority.
     let authority = request.uri().authority();
@@ -160,7 +221,11 @@ fn op_get_request_uri_authority(
     Ok(authority.map(|v| v.to_string()))
 }
 
-fn op_get_request_uri_query(state: &mut OpState, _: (), _: ()) -> Result<Option<String>, AnyError> {
+fn op_ev_get_request_uri_query(
+    state: &mut OpState,
+    _: (),
+    _: (),
+) -> Result<Option<String>, AnyError> {
     let events_rc = Rc::clone(state.borrow::<Rc<RefCell<Events>>>());
     let events = events_rc.borrow();
 
@@ -172,7 +237,7 @@ fn op_get_request_uri_query(state: &mut OpState, _: (), _: ()) -> Result<Option<
 
     // Check read permission.
     let permissions = Rc::clone(state.borrow::<Rc<Permissions>>());
-    permissions.check_sync(HttpEvent::ReadRequest, UrlPathString::from(path))?;
+    permissions.check(HttpEvent::ReadRequest, Path::from(path))?;
 
     // Get the value of request query.
     let query = request.uri().query();
@@ -180,7 +245,7 @@ fn op_get_request_uri_query(state: &mut OpState, _: (), _: ()) -> Result<Option<
     Ok(query.map(|v| v.to_owned()))
 }
 
-fn op_get_request_uri_path(state: &mut OpState, _: (), _: ()) -> Result<String, AnyError> {
+fn op_ev_get_request_uri_path(state: &mut OpState, _: (), _: ()) -> Result<String, AnyError> {
     let events_rc = Rc::clone(state.borrow::<Rc<RefCell<Events>>>());
     let events = events_rc.borrow();
 
@@ -192,7 +257,7 @@ fn op_get_request_uri_path(state: &mut OpState, _: (), _: ()) -> Result<String, 
 
     // Check read permission.
     let permissions = Rc::clone(state.borrow::<Rc<Permissions>>());
-    permissions.check_sync(HttpEvent::ReadRequest, UrlPathString::from(path))?;
+    permissions.check(HttpEvent::ReadRequest, Path::from(path))?;
 
     // Get the value of request path.
     let uri_path = request.uri().path();
@@ -200,7 +265,7 @@ fn op_get_request_uri_path(state: &mut OpState, _: (), _: ()) -> Result<String, 
     Ok(uri_path.to_owned())
 }
 
-fn op_get_request_method(state: &mut OpState, _: (), _: ()) -> Result<String, AnyError> {
+fn op_ev_get_request_method(state: &mut OpState, _: (), _: ()) -> Result<String, AnyError> {
     let events_rc = Rc::clone(state.borrow::<Rc<RefCell<Events>>>());
     let events = events_rc.borrow();
 
@@ -212,7 +277,7 @@ fn op_get_request_method(state: &mut OpState, _: (), _: ()) -> Result<String, An
 
     // Check read permission.
     let permissions = Rc::clone(state.borrow::<Rc<Permissions>>());
-    permissions.check_sync(HttpEvent::ReadRequest, UrlPathString::from(path))?;
+    permissions.check(HttpEvent::ReadRequest, Path::from(path))?;
 
     // Get the value of request method.
     let method = request.method().to_string();
@@ -220,39 +285,84 @@ fn op_get_request_method(state: &mut OpState, _: (), _: ()) -> Result<String, An
     Ok(method)
 }
 
-async fn op_read_request_body(
-    state: Rc<RefCell<OpState>>,
-    mut buf: ZeroCopyBuf,
-    _: (),
-) -> Result<usize, AnyError> {
-    let events_rc = Rc::clone(state.borrow().borrow::<Rc<RefCell<Events>>>());
+fn op_ev_get_request_body_size_hint(state: &mut OpState, _: (), _: ()) -> Result<u64, AnyError> {
+    let events_rc = Rc::clone(state.borrow::<Rc<RefCell<Events>>>());
+    let events = events_rc.borrow();
+
+    // Get request from event.
+    let (request, path) = match events.http.as_ref() {
+        Some(event) => (&event.request, &event.path),
+        None => return errors::missing_error_t(r#"unsupported event, "HttpEvent""#),
+    };
+
+    // Check read permission.
+    let permissions = Rc::clone(state.borrow::<Rc<Permissions>>());
+    permissions.check(HttpEvent::ReadRequest, Path::from(path))?;
+
+    // Get the value of request body size.
+    let size = HttpBody::size_hint(request.body())
+        .exact()
+        .unwrap_or_default();
+
+    Ok(size)
+}
+
+fn op_ev_get_request_body_stream(state: &mut OpState, _: (), _: ()) -> Result<u32, AnyError> {
+    let events_rc = Rc::clone(state.borrow::<Rc<RefCell<Events>>>());
     let mut events = events_rc.borrow_mut();
 
     // Get request from event.
-    let request = match events.http.as_mut() {
-        Some(event) => &mut event.request,
+    let (request, path) = match events.http.as_mut() {
+        Some(event) => (&mut event.request, &event.path),
+        None => return errors::missing_error_t(r#"unsupported event, "HttpEvent""#),
+    };
+
+    // Check read permission.
+    let permissions = Rc::clone(state.borrow::<Rc<Permissions>>());
+    permissions.check(HttpEvent::ReadRequest, Path::from(path))?;
+
+    // Take ownership of body.
+    let body = mem::replace(request.body_mut(), Body::empty());
+    let reader = StreamReader::new(BodyStream(body));
+
+    // Add stream reader to resource table.
+    let rid = state
+        .resource_table
+        .add(StreamReaderResource(RefCell::new(reader)));
+
+    Ok(rid)
+}
+
+async fn op_ev_read_request_body_chunk(
+    state: Rc<RefCell<OpState>>,
+    rid: ResourceId,
+    mut buf: ZeroCopyBuf,
+) -> Result<usize, AnyError> {
+    let events_rc = Rc::clone(state.borrow().borrow::<Rc<RefCell<Events>>>());
+    let events = events_rc.borrow_mut();
+
+    // Get request from event.
+    let path = match events.http.as_ref() {
+        Some(event) => &event.path,
         None => return errors::missing_error_t(r#"unsupported event, "HttpEvent""#),
     };
 
     // Check read permission.
     let permissions = Rc::clone(state.borrow().borrow::<Rc<Permissions>>());
-    permissions.check_sync(
-        HttpEvent::ReadRequest,
-        UrlPathString::from(request.uri().path()),
-    )?;
+    permissions.check(HttpEvent::ReadRequest, Path::from(path))?;
 
     // Get the next buffer from body.
-    let body = request.body_mut();
-    futures_util::pin_mut!(body);
+    let reader = state
+        .borrow()
+        .resource_table
+        .get::<StreamReaderResource>(rid)?;
 
-    // Copy body bytes into buffer.
-    let bytes = body.data().await.unwrap_or(Ok(Bytes::new()))?;
-    buf.copy_from_slice(bytes.as_ref());
+    let total_read = reader.0.borrow_mut().read(&mut buf).await?;
 
-    Ok(bytes.len())
+    Ok(total_read)
 }
 
-fn op_set_response_header(
+fn op_ev_set_response_header(
     state: &mut OpState,
     key: String,
     value: String,
@@ -268,7 +378,7 @@ fn op_set_response_header(
 
     // Check read permission.
     let permissions = Rc::clone(state.borrow::<Rc<Permissions>>());
-    permissions.check_sync(HttpEvent::WriteResponse, UrlPathString::from(path))?;
+    permissions.check(HttpEvent::WriteResponse, Path::from(path))?;
 
     // Set header.
     let optional = response
@@ -278,7 +388,7 @@ fn op_set_response_header(
     Ok(optional.map(|_| value))
 }
 
-fn op_set_response_status(state: &mut OpState, status: u16, _: ()) -> Result<(), AnyError> {
+fn op_ev_set_response_status(state: &mut OpState, status: u16, _: ()) -> Result<(), AnyError> {
     let events_rc = Rc::clone(state.borrow::<Rc<RefCell<Events>>>());
     let mut events = events_rc.borrow_mut();
 
@@ -290,7 +400,7 @@ fn op_set_response_status(state: &mut OpState, status: u16, _: ()) -> Result<(),
 
     // Check read permission.
     let permissions = Rc::clone(state.borrow::<Rc<Permissions>>());
-    permissions.check_sync(HttpEvent::WriteResponse, UrlPathString::from(path))?;
+    permissions.check(HttpEvent::WriteResponse, Path::from(path))?;
 
     // Write status.
     *response.status_mut() = StatusCode::try_from(status)?;
@@ -298,7 +408,7 @@ fn op_set_response_status(state: &mut OpState, status: u16, _: ()) -> Result<(),
     Ok(())
 }
 
-fn op_set_response_version(state: &mut OpState, version: String, _: ()) -> Result<(), AnyError> {
+fn op_ev_set_response_version(state: &mut OpState, version: String, _: ()) -> Result<(), AnyError> {
     let events_rc = Rc::clone(state.borrow::<Rc<RefCell<Events>>>());
     let mut events = events_rc.borrow_mut();
 
@@ -310,7 +420,7 @@ fn op_set_response_version(state: &mut OpState, version: String, _: ()) -> Resul
 
     // Check read permission.
     let permissions = Rc::clone(state.borrow::<Rc<Permissions>>());
-    permissions.check_sync(HttpEvent::WriteResponse, UrlPathString::from(path))?;
+    permissions.check(HttpEvent::WriteResponse, Path::from(path))?;
 
     // Write version.
     *response.version_mut() = match version.as_str() {
@@ -330,7 +440,7 @@ fn op_set_response_version(state: &mut OpState, version: String, _: ()) -> Resul
     Ok(())
 }
 
-fn op_write_response_body(state: &mut OpState, buf: Vec<u8>, _: ()) -> Result<(), AnyError> {
+fn op_ev_write_response_body(state: &mut OpState, buf: ZeroCopyBuf, _: ()) -> Result<(), AnyError> {
     // TODO(appcypher): Support body streaming.
     let events_rc = Rc::clone(state.borrow::<Rc<RefCell<Events>>>());
     let mut events = events_rc.borrow_mut();
@@ -343,15 +453,15 @@ fn op_write_response_body(state: &mut OpState, buf: Vec<u8>, _: ()) -> Result<()
 
     // Check read permission.
     let permissions = Rc::clone(state.borrow::<Rc<Permissions>>());
-    permissions.check_sync(HttpEvent::WriteResponse, UrlPathString::from(path))?;
+    permissions.check(HttpEvent::WriteResponse, Path::from(path))?;
 
     // Write to body.
-    *response.body_mut() = Body::from(buf);
+    *response.body_mut() = Body::from(buf.to_vec());
 
     Ok(())
 }
 
-async fn op_send_response(state: Rc<RefCell<OpState>>, _: (), _: ()) -> Result<(), AnyError> {
+async fn op_ev_send_response(state: Rc<RefCell<OpState>>, _: (), _: ()) -> Result<(), AnyError> {
     let events_rc = Rc::clone(state.borrow().borrow::<Rc<RefCell<Events>>>());
     let mut events = events_rc.borrow_mut();
 
@@ -367,7 +477,7 @@ async fn op_send_response(state: Rc<RefCell<OpState>>, _: (), _: ()) -> Result<(
 
     // Check read permission.
     let permissions = Rc::clone(state.borrow().borrow::<Rc<Permissions>>());
-    permissions.check_sync(HttpEvent::SendResponse, UrlPathString::from(path))?;
+    permissions.check(HttpEvent::SendResponse, Path::from(path))?;
 
     // Send response.
     responder.send_response(response).await?;

@@ -10,7 +10,7 @@ use utilities::result::{Context, Result};
 pub struct Runtime(JsRuntime);
 
 impl Runtime {
-    async fn new(options: RuntimeOptions) -> Result<Self> {
+    pub async fn new(options: RuntimeOptions) -> Result<Self> {
         // TODO(appcypher): Add support for memory snapshot after initialisation that can then be reused each time.
         // TODO(appcypher): SEC: Support specifying maximum_heap_size_in_bytes.
         // TODO(appcypher): SEC: Add a callback that panics for near_heap_limit_callback.
@@ -40,7 +40,10 @@ impl Runtime {
         Self::new(opts).await
     }
 
-    pub async fn default_event(permissions: Permissions, events: Rc<RefCell<Events>>) -> Result<Self> {
+    pub async fn default_event(
+        permissions: Permissions,
+        events: Rc<RefCell<Events>>,
+    ) -> Result<Self> {
         // TODO(appcypher): There should be a series of snapshots with different combination of extensions. Chosen based on permissions.
         let permissions = Rc::new(permissions);
 
@@ -130,7 +133,7 @@ impl Runtime {
 
             // Execute postscript.
             runtime
-                .execute_script(&format!("sys:ext/{:?}", &path), &content)
+                .execute_script(&format!("(tera:postscripts) {}", &path.display()), &content)
                 .context("executing postscript file")?;
         }
 

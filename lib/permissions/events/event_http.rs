@@ -1,6 +1,6 @@
 // Copyright 2021 the Gigamono authors. All rights reserved. Apache 2.0 license.
 
-use crate::permissions::{PermissionType, PermissionTypeKey, Resource};
+use crate::permissions::{PermissionType, PermissionTypeKey, Resource, State};
 use regex::Regex;
 use std::{any::TypeId, rc::Rc};
 use utilities::{
@@ -17,16 +17,16 @@ pub enum HttpEvent {
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct UrlPathString(pub String);
+pub struct Path(pub String);
 
 impl HttpEvent {
     // Accepts url path patterns like `/v1/users/*`, `/v1/*/1/*`, `/v1/users*`
-    fn url_path_match(pattern: &str, test: &UrlPathString) -> Result<bool> {
-        let regex_pattern = regex::escape(&format!("^{}$", pattern.replace("*", ".*")));
+    fn url_path_match(pattern: &str, test: &Path) -> Result<bool> {
+        let regex_pattern = &format!("^{}$", pattern.replace("*", ".*"));
         let re =
             Regex::new(&regex_pattern).context("compiling regex pattern for matching url path")?;
 
-        if re.is_match(&test.as_ref()) {
+        if re.is_match(test.as_ref()) {
             return Ok(true);
         }
 
@@ -42,19 +42,20 @@ impl PermissionType for HttpEvent {
         }
     }
 
-    fn check_sync(
+    fn check(
         &self,
         path: &Box<dyn Resource>,
         allow_list: Rc<Vec<Box<dyn Resource>>>,
+        _: &Option<Box<dyn State>>,
     ) -> Result<()> {
         // Downcast trait object to PathString.
-        let path = path.downcast_ref::<UrlPathString>().unwrap();
+        let path = path.downcast_ref::<Path>().unwrap();
 
         // Check if `path` matches any path in allow_list.
         let mut found = false;
         for allowed_pattern in allow_list.iter() {
-            // Downcast trait object to UrlPathString.
-            let allowed_pattern = &allowed_pattern.downcast_ref::<UrlPathString>().unwrap().0;
+            // Downcast trait object to Path.
+            let allowed_pattern = &allowed_pattern.downcast_ref::<Path>().unwrap().0;
 
             if Self::url_path_match(allowed_pattern, &path)? {
                 found = true;
@@ -74,7 +75,7 @@ impl PermissionType for HttpEvent {
     }
 }
 
-impl Resource for UrlPathString {
+impl Resource for Path {
     fn get_clone(&self) -> Box<dyn Resource> {
         Box::new(self.clone())
     }
@@ -90,25 +91,25 @@ impl Into<Box<dyn PermissionType>> for HttpEvent {
     }
 }
 
-impl Into<Box<dyn Resource>> for UrlPathString {
+impl Into<Box<dyn Resource>> for Path {
     fn into(self) -> Box<dyn Resource> {
         Box::new(self)
     }
 }
 
-impl From<&str> for UrlPathString {
+impl From<&str> for Path {
     fn from(s: &str) -> Self {
         Self(s.into())
     }
 }
 
-impl From<&String> for UrlPathString {
+impl From<&String> for Path {
     fn from(s: &String) -> Self {
         Self(s.into())
     }
 }
 
-impl AsRef<String> for UrlPathString {
+impl AsRef<String> for Path {
     fn as_ref(&self) -> &String {
         &self.0
     }

@@ -18,11 +18,13 @@ deno_core = "0.108.0"
 utilities = { path = "../utilities" }
 serde = { version = "1.0", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
+tokio-util =  { version = "0.6.9", features = ["full"] }
 log = "0.4.14"
 downcast-rs = "1.2.0"
 path-clean = "0.1.0"
 regex = "1.5.4"
 futures-util = "0.3.18"
+futures-core = "0.3.18"
 
 [lib]
 name = "tera"

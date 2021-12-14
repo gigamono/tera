@@ -6,7 +6,10 @@ use std::{cell::RefCell, rc::Rc};
 
 use tera::{
     events::{Events, HttpEvent, HttpResponder},
-    permissions::Permissions,
+    permissions::{
+        events::event_http::{self, Path},
+        Permissions,
+    },
     Runtime,
 };
 use tokio::sync::mpsc::{self, Sender};
@@ -17,8 +20,13 @@ use utilities::{
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Create permissions.
-    let permissions = Permissions::default();
+    // Create permitted resources
+    let allow_list = [Path::from("/")];
+
+    // Create permissions
+    let permissions = Permissions::builder()
+        .add_permissions(&[(event_http::HttpEvent::SendResponse, &allow_list)])?
+        .build();
 
     // Create channels.
     let (response_tx, mut response_rx) = mpsc::channel::<Response<Body>>(2);
@@ -30,7 +38,7 @@ async fn main() -> Result<()> {
                 println!("Received response = {:?}", response);
             }
             None => {
-                println!("No response recieved response");
+                println!("No response recieved");
             }
         };
     });
@@ -44,9 +52,19 @@ async fn main() -> Result<()> {
     // Read main module code.
     let main_module_filename = "./examples/js/event_http.js";
     let main_module_code = r#"
-    const { Response, httpEvent } = sys;
-    console.log(`request = ${httpEvent.request}`);
-    httpEvent.respondWith(new Response("Hello world"));
+    const { request, respondWith } = httpEvent;
+
+    ///// REQUEST
+    // Log request.
+    log.info("request =", request);
+
+    // Read body.
+    const buf = await request.body.readAll();
+    log.info("request body decoded =", decode(buf));
+
+    ///// RESPONSE
+    // Send response.
+    await respondWith(new Response("Sending something back"));
     "#;
 
     // Execute main module.
