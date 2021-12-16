@@ -27,6 +27,7 @@ impl Runtime {
     }
 
     pub async fn default_main(permissions: Permissions) -> Result<Self> {
+        // TODO(appcypher): Support other options destructured to replace. ..Default::default()
         // TODO(appcypher): There should be a series of snapshots with different combination of extensions. Chosen based on permissions.
         let permissions = Rc::new(permissions);
 
@@ -44,6 +45,7 @@ impl Runtime {
         permissions: Permissions,
         events: Rc<RefCell<Events>>,
     ) -> Result<Self> {
+        // TODO(appcypher): Support other options destructured to replace. ..Default::default()
         // TODO(appcypher): There should be a series of snapshots with different combination of extensions. Chosen based on permissions.
         let permissions = Rc::new(permissions);
 

@@ -1,7 +1,6 @@
 // Copyright 2021 the Gigamono authors. All rights reserved. Apache 2.0 license.
 // TODO(appcypher): Synchronisation needed with fcntl. Also applies to db. https://blog.cloudflare.com/durable-objects-easy-fast-correct-choose-three/
 
-use deno_core::anyhow::Context;
 use deno_core::{
     error::AnyError, include_js_files, op_async, Extension, OpState, Resource, ResourceId,
 };
@@ -24,10 +23,10 @@ pub fn fs(permissions: Rc<Permissions>) -> Extension {
             "lib/extensions/fs/01_fs.js",
         ))
         .ops(vec![
-            ("op_fs_open", op_async(op_fs_open)),
-            ("op_fs_write", op_async(op_fs_write)),
-            ("op_fs_read", op_async(op_fs_read)),
-            ("op_fs_seek", op_async(op_fs_seek)),
+            ("opFsOpen", op_async(op_fs_open)),
+            ("opFsWrite", op_async(op_fs_write)),
+            ("opFsRead", op_async(op_fs_read)),
+            ("opFsSeek", op_async(op_fs_seek)),
         ])
         .state(move |state| {
             if !state.has::<Permissions>() {
@@ -88,8 +87,6 @@ async fn op_fs_open(
         permissions.check(FS::Write, Path::from(path))?;
     }
 
-    println!(">>> options = {:?}", options);
-
     // Open file with options specified.
     let file = OpenOptions::new()
         .read(options.read)
@@ -98,8 +95,7 @@ async fn op_fs_open(
         .truncate(options.truncate)
         .create(options.create)
         .open(path)
-        .await
-        .context("opening and/or creating file")?;
+        .await?;
 
     // Save file info for later.
     let rid = state.borrow_mut().resource_table.add(FileResource {
@@ -123,7 +119,7 @@ async fn op_fs_write(
     let file = file_rc.as_mut();
 
     // Write to file.
-    let total_written = file.write(&buf[..]).await?;
+    let total_written = file.write(&buf).await?;
 
     // Flush to move intermediate buffered content to file.
     file.flush().await?;
@@ -143,7 +139,7 @@ async fn op_fs_read(
     let file = file_rc.as_mut();
 
     // Read from file.
-    let total_read = file.read(&mut buf[..]).await?;
+    let total_read = file.read(&mut buf).await?;
 
     Ok(total_read)
 }

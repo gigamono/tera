@@ -23,7 +23,11 @@ async fn main() -> Result<()> {
     // Create permissions
     let permissions = Permissions::builder()
         .add_state(Root::from(env!("CARGO_MANIFEST_DIR")))
-        .add_permissions(&[(FS::Open, &allow_list), (FS::Read, &allow_list)])?
+        .add_permissions(&[
+            (FS::Open, &allow_list),
+            (FS::Read, &allow_list),
+            (FS::Write, &allow_list),
+        ])?
         .build();
 
     // Create a new runtime.
@@ -34,9 +38,14 @@ async fn main() -> Result<()> {
         .execute_module(
             "examples/js/read_text_file.js",
             r#"
-            const file = await File.open("examples/txt/lorem.txt", { read: true });
-            const buf = await file.readAll();
-            log.info(">> file content =", decode(buf));
+            const readFile = await File.open("examples/txt/lorem.txt", { read: true });
+            const readBuf = await readFile.readAll();
+            log.info(">> file content =", decode(readBuf));
+
+            const writeFile = await File.open("examples/txt/write.txt", { write: true });
+            const writeString = `This is a random value written to a file: ${Math.random()}`;
+            log.info(">> write string =", writeString);
+            await writeFile.writeAll(encode(writeString));
           "#,
         )
         .await

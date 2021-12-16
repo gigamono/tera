@@ -2,8 +2,9 @@
 
 extern crate tera;
 
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, future, rc::Rc};
 
+use futures_util::{StreamExt, TryStreamExt};
 use tera::{
     events::{Events, HttpEvent, HttpResponder},
     permissions::{
@@ -34,8 +35,16 @@ async fn main() -> Result<()> {
     // Recieve response on a separate task.
     tokio::spawn(async move {
         match response_rx.recv().await {
-            Some(response) => {
-                println!("Received response = {:?}", response);
+            Some(mut response) => {
+                let body = response.body_mut();
+
+                let stream = body.into_stream();
+                stream
+                    .for_each(|item| {
+                        println!("Item = {:?}", item);
+                        future::ready(())
+                    })
+                    .await;
             }
             None => {
                 println!("No response recieved");
@@ -54,17 +63,41 @@ async fn main() -> Result<()> {
     let main_module_code = r#"
     const { request, respondWith } = httpEvent;
 
-    ///// REQUEST
     // Log request.
     log.info("request =", request);
 
     // Read body.
     const buf = await request.body.readAll();
+
+    // Log body.
     log.info("request body decoded =", decode(buf));
 
-    ///// RESPONSE
-    // Send response.
-    await respondWith(new Response("Sending something back"));
+    // Send random response.
+    if (Math.random() < 0.5) {
+      await sendFixedResponse();
+    } else {
+      await sendStreamingResponse();
+    }
+
+    // Sending response body with fixed content length.
+    async function sendFixedResponse() {
+      await respondWith(
+        new Response('{ "message": "Hello beep boop!" }', {
+          headers: { "Content-Type": "application/json" },
+        })
+      );
+    }
+
+    // Streaming response body with transfer-encoding chunked in Http/1.1 or streaming in H2
+    async function sendStreamingResponse() {
+      async function* iterator() {
+        for (let i = 0; i < 20; i++) {
+          yield encode(`index = ${i}\n`);
+        }
+      }
+
+      await respondWith(new Response(iterator()));
+    }
     "#;
 
     // Execute main module.

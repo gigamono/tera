@@ -3,22 +3,25 @@
 use crate::events::Events;
 use crate::permissions::events::event_http::{HttpEvent, Path};
 use crate::permissions::Permissions;
+use deno_core::parking_lot::Mutex;
 use deno_core::{error::AnyError, include_js_files, op_async, Extension, OpState};
 use deno_core::{op_sync, Resource, ResourceId, ZeroCopyBuf};
 use futures_util::Stream;
 use std::cell::RefCell;
+use std::collections::VecDeque;
 use std::convert::TryFrom;
 use std::mem;
 use std::pin::Pin;
 use std::rc::Rc;
 use std::str::FromStr;
-use std::task::{Context, Poll};
+use std::sync::Arc;
+use std::task::{Context, Poll, Waker};
 use tokio::io::AsyncReadExt;
 use tokio_util::io::StreamReader;
 use utilities::errors;
 use utilities::http::body::{Bytes, HttpBody};
 use utilities::http::header::{HeaderName, HeaderValue};
-use utilities::http::{Body, Response, StatusCode, Version};
+use utilities::http::{Body, StatusCode, Version};
 
 pub fn event_http(permissions: Rc<Permissions>, events: Rc<RefCell<Events>>) -> Extension {
     let extension = Extension::builder()
@@ -29,63 +32,70 @@ pub fn event_http(permissions: Rc<Permissions>, events: Rc<RefCell<Events>>) -> 
         .ops(vec![
             // Request.
             (
-                "op_ev_get_request_header",
+                "opEvGetRequestHeader",
                 op_sync(op_ev_get_request_header),
             ),
             (
-                "op_ev_set_request_header",
+                "opEvSetRequestHeader",
                 op_sync(op_ev_set_request_header),
             ),
             (
-                "op_ev_get_request_uri_scheme",
+                "opEvGetRequestUriScheme",
                 op_sync(op_ev_get_request_uri_scheme),
             ),
             (
-                "op_ev_get_request_uri_authority",
+                "opEvGetRequestUriAuthority",
                 op_sync(op_ev_get_request_uri_authority),
             ),
             (
-                "op_ev_get_request_uri_path",
+                "opEvGetRequestUriPath",
                 op_sync(op_ev_get_request_uri_path),
             ),
             (
-                "op_ev_get_request_uri_query",
+                "opEvGetRequestUriQuery",
                 op_sync(op_ev_get_request_uri_query),
             ),
             (
-                "op_ev_get_request_method",
+                "opEvGetRequestMethod",
                 op_sync(op_ev_get_request_method),
             ),
             (
-                "op_ev_get_request_body_size_hint",
+                "opEvGetRequestBodySizeHint",
                 op_sync(op_ev_get_request_body_size_hint),
             ),
             (
-                "op_ev_get_request_body_stream",
-                op_sync(op_ev_get_request_body_stream),
+                "opEvGetRequestBodyReadStream",
+                op_sync(op_ev_get_request_body_read_stream),
             ),
             (
-                "op_ev_read_request_body_chunk",
+                "opEvReadRequestBodyChunk",
                 op_async(op_ev_read_request_body_chunk),
             ),
             // Response.
             (
-                "op_ev_set_response_header",
+                "opEvSetResponseHeader",
                 op_sync(op_ev_set_response_header),
             ),
             (
-                "op_ev_set_response_status",
+                "opEvSetResponseStatus",
                 op_sync(op_ev_set_response_status),
             ),
             (
-                "op_ev_set_response_version",
+                "opEvSetResponseVersion",
                 op_sync(op_ev_set_response_version),
             ),
             (
-                "op_ev_write_response_body",
-                op_sync(op_ev_write_response_body),
+                "opEvSetSendResponseBody",
+                op_async(op_ev_set_send_response_body),
             ),
-            ("op_ev_send_response", op_async(op_ev_send_response)),
+            (
+                "opEvSetSendResponseBodyWriteStream",
+                op_async(op_ev_set_send_response_body_write_stream),
+            ),
+            (
+                "opEvWriteResponseBodyChunk",
+                op_async(op_ev_write_response_body_chunk),
+            ),
         ])
         .state(move |state| {
             if !state.has::<Permissions>() {
@@ -103,9 +113,37 @@ pub fn event_http(permissions: Rc<Permissions>, events: Rc<RefCell<Events>>) -> 
     extension
 }
 
-struct BodyStream(Body);
+// TODO(appcypher): 100 might be small, but each buffer can be 16kb. Check SIZE_PER_ITER in lib/runtime/postscripts/01_common.js.
+const MAX_BUFFER_QUEUE_SIZE: usize = 100;
 
-impl Stream for BodyStream {
+// This is where reponse buffer streams are stored.
+// Using Arc<Mutex<T>> here cause Body::wrap_stream requires Send stream.
+#[derive(Default)]
+struct BufferQueue {
+    pub queue: VecDeque<Vec<u8>>,
+    waker: Option<Waker>, // Used to wake associated stream future when the queue is no longer empty.
+}
+
+type BufferQueueShared = Arc<Mutex<BufferQueue>>;
+
+struct BodyReadStream(Body);
+
+struct StreamReaderResource(RefCell<StreamReader<BodyReadStream, Bytes>>);
+
+struct BodyWriteStream(BufferQueueShared);
+
+struct BufferQueueResource(BufferQueueShared);
+
+impl BufferQueue {
+    pub fn new() -> Self {
+        Self {
+            queue: VecDeque::new(),
+            waker: None,
+        }
+    }
+}
+
+impl Stream for BodyReadStream {
     type Item = Result<Bytes, std::io::Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
@@ -120,9 +158,31 @@ impl Stream for BodyStream {
     }
 }
 
-struct StreamReaderResource(RefCell<StreamReader<BodyStream, Bytes>>);
+impl Stream for BodyWriteStream {
+    type Item = Result<Vec<u8>, std::io::Error>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        // An empty buffer signifies closing a stream.
+        let buffer = self.0.lock().queue.pop_front();
+        match buffer {
+            Some(buffer) => {
+                if buffer.len() > 0 {
+                    Poll::Ready(Some(Ok(buffer)))
+                } else {
+                    Poll::Ready(None) // End stream.
+                }
+            }
+            None => {
+                self.0.lock().waker = Some(cx.waker().clone()); // Does not reach here
+                Poll::Pending
+            }
+        }
+    }
+}
 
 impl Resource for StreamReaderResource {}
+
+impl Resource for BufferQueueResource {}
 
 fn op_ev_get_request_header(state: &mut OpState, key: String, _: ()) -> Result<Vec<u8>, AnyError> {
     let events_rc = Rc::clone(state.borrow::<Rc<RefCell<Events>>>());
@@ -307,7 +367,7 @@ fn op_ev_get_request_body_size_hint(state: &mut OpState, _: (), _: ()) -> Result
     Ok(size)
 }
 
-fn op_ev_get_request_body_stream(state: &mut OpState, _: (), _: ()) -> Result<u32, AnyError> {
+fn op_ev_get_request_body_read_stream(state: &mut OpState, _: (), _: ()) -> Result<u32, AnyError> {
     let events_rc = Rc::clone(state.borrow::<Rc<RefCell<Events>>>());
     let mut events = events_rc.borrow_mut();
 
@@ -322,13 +382,14 @@ fn op_ev_get_request_body_stream(state: &mut OpState, _: (), _: ()) -> Result<u3
     permissions.check(HttpEvent::ReadRequest, Path::from(path))?;
 
     // Take ownership of body.
-    let body = mem::replace(request.body_mut(), Body::empty());
-    let reader = StreamReader::new(BodyStream(body));
+    let body = mem::take(request.body_mut());
 
     // Add stream reader to resource table.
     let rid = state
         .resource_table
-        .add(StreamReaderResource(RefCell::new(reader)));
+        .add(StreamReaderResource(RefCell::new(StreamReader::new(
+            BodyReadStream(body),
+        ))));
 
     Ok(rid)
 }
@@ -440,35 +501,54 @@ fn op_ev_set_response_version(state: &mut OpState, version: String, _: ()) -> Re
     Ok(())
 }
 
-fn op_ev_write_response_body(state: &mut OpState, buf: ZeroCopyBuf, _: ()) -> Result<(), AnyError> {
+async fn op_ev_set_send_response_body(
+    state: Rc<RefCell<OpState>>,
+    buf: ZeroCopyBuf,
+    _: (),
+) -> Result<(), AnyError> {
     // TODO(appcypher): Support body streaming.
-    let events_rc = Rc::clone(state.borrow::<Rc<RefCell<Events>>>());
+    let events_rc = Rc::clone(state.borrow().borrow::<Rc<RefCell<Events>>>());
     let mut events = events_rc.borrow_mut();
 
     // Get objects from http.event.
-    let (response, path) = match events.http.as_mut() {
-        Some(event) => (&mut event.response, &event.path),
+    let (mut response, responder, path) = match events.http.as_mut() {
+        Some(event) => (
+            mem::take(&mut event.response), // Take ownership of response.
+            &mut event.responder,
+            &event.path,
+        ),
         None => return errors::missing_error_t(r#"unsupported event, "HttpEvent""#),
     };
 
     // Check read permission.
-    let permissions = Rc::clone(state.borrow::<Rc<Permissions>>());
+    let permissions = Rc::clone(state.borrow().borrow::<Rc<Permissions>>());
     permissions.check(HttpEvent::WriteResponse, Path::from(path))?;
 
-    // Write to body.
-    *response.body_mut() = Body::from(buf.to_vec());
+    // Write to body if buffer is not empty.
+    if buf.len() > 0 {
+        *response.body_mut() = Body::from(buf.to_vec());
+    }
+
+    // Send response.
+    responder.send_response(response).await?;
 
     Ok(())
 }
 
-async fn op_ev_send_response(state: Rc<RefCell<OpState>>, _: (), _: ()) -> Result<(), AnyError> {
+// As there is no way for ops to call js code which would enable lazy streaming.
+// We are left with an eager streaming implementation that uses a queue.
+async fn op_ev_set_send_response_body_write_stream(
+    state: Rc<RefCell<OpState>>,
+    _: (),
+    _: (),
+) -> Result<u32, AnyError> {
     let events_rc = Rc::clone(state.borrow().borrow::<Rc<RefCell<Events>>>());
     let mut events = events_rc.borrow_mut();
 
     // Get request from event.
-    let (response, responder, path) = match events.http.as_mut() {
+    let (mut response, responder, path) = match events.http.as_mut() {
         Some(event) => (
-            mem::replace(&mut event.response, Response::default()), // Take ownership of response.
+            mem::take(&mut event.response), // Take ownership of response.
             &mut event.responder,
             &event.path,
         ),
@@ -479,8 +559,66 @@ async fn op_ev_send_response(state: Rc<RefCell<OpState>>, _: (), _: ()) -> Resul
     let permissions = Rc::clone(state.borrow().borrow::<Rc<Permissions>>());
     permissions.check(HttpEvent::SendResponse, Path::from(path))?;
 
+    // Create queue.
+    let shared_queue = Arc::new(Mutex::new(BufferQueue::new()));
+
+    // Create a body writer as well.
+    let writer = BodyWriteStream(Arc::clone(&shared_queue));
+
+    // Add queue to resource table.
+    let rid = state
+        .borrow_mut()
+        .resource_table
+        .add(BufferQueueResource(shared_queue));
+
+    // Create a stream body.
+    *response.body_mut() = Body::wrap_stream(writer); //= Body::from(buf.to_vec());
+
     // Send response.
     responder.send_response(response).await?;
+
+    Ok(rid)
+}
+
+async fn op_ev_write_response_body_chunk(
+    state: Rc<RefCell<OpState>>,
+    rid: ResourceId,
+    buf: ZeroCopyBuf,
+) -> Result<(), AnyError> {
+    let events_rc = Rc::clone(state.borrow().borrow::<Rc<RefCell<Events>>>());
+    let events = events_rc.borrow_mut();
+
+    // Get request from event.
+    let path = match events.http.as_ref() {
+        Some(event) => &event.path,
+        None => return errors::missing_error_t(r#"unsupported event, "HttpEvent""#),
+    };
+
+    // Check read permission.
+    let permissions = Rc::clone(state.borrow().borrow::<Rc<Permissions>>());
+    permissions.check(HttpEvent::ReadRequest, Path::from(path))?;
+
+    // Get buffer queue.
+    let resource = state
+        .borrow()
+        .resource_table
+        .get::<BufferQueueResource>(rid)?;
+
+    // Making sure queue size limit is not exceeded.
+    let queue_len = resource.0.lock().queue.len();
+    if queue_len >= MAX_BUFFER_QUEUE_SIZE {
+        return errors::limit_exceeded_error_t(
+            "maximum response body streaming queue limit reached",
+        );
+    }
+
+    // Push value into buffer queue.
+    resource.0.lock().queue.push_back(buf.to_vec());
+
+    // Wake the associated stream future.
+    if let Some(waker) = &resource.0.lock().waker {
+        waker.wake_by_ref();
+    };
 
     Ok(())
 }
