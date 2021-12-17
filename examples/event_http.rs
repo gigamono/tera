@@ -63,9 +63,6 @@ async fn main() -> Result<()> {
     let main_module_code = r#"
     const { request, respondWith } = httpEvent;
 
-    // Log request.
-    log.info("request =", request);
-
     // Read body.
     const buf = await request.body.readAll();
 

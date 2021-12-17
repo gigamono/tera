@@ -16,7 +16,7 @@ There is currently no plan to strictly support web-compatible APIs or out-of-the
 
 There is plan to support WebAssembly in the future.
 
-> Information provided here is for folks working on this package. If your goal is to get started with the Gigamono framework, check the [Gigamono repo](https://github.com/gigamono/gigamono) on how to do that.
+> If you are looking to get started with the Gigamono framework, check the [Gigamono repo](https://github.com/gigamono/gigamono).
 
 ##
 
