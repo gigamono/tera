@@ -33,41 +33,35 @@ You need to add [tokio](https://crates.io/crates/tokio) to your dependencies.
 :warning: The current API is subject to change.
 
 ```rs
-extern crate tera;
-
-use tera::{
-    permissions::{
-        fs::{PathString, FS},
-        Permissions,
-    },
-    Runtime,
-};
-use tokio::fs;
-use utilities::result::Result;
-
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Create allowed resources
-    let allow_list = [PathString("./examples/txt".into())];
+    // Create permitted resources
+    let allow_list = [Path::from(concat!(env!("CARGO_MANIFEST_DIR"), "/", "examples/txt"))];
 
-    // Create permissions object.
+    // Create permissions
     let permissions = Permissions::builder()
+        .add_state(Root::from(env!("CARGO_MANIFEST_DIR"))) // Root folder for files to be accessed.
         .add_permissions(&[
             (FS::Open, &allow_list),
-            (FS::Read, &allow_list)
-        ])
+            (FS::Read, &allow_list),
+        ])?
         .build();
 
-    // Start a new js runtime.
+    // Create a new runtime.
     let mut runtime = Runtime::default_main(permissions).await?;
 
-    // Get code and main module filename.
-    let main_module_filename = "./examples/js/read_text_file.js";
-    let main_module_code = fs::read_to_string(main_module_filename).await?;
-
-    // Execute the main module code.
+    // Execute main module.
     runtime
-        .execute_module(main_module_filename, main_module_code)
+        .execute_module(
+            "examples/read_text_file.js",
+            r#"
+            const readFile = await File.open("examples/txt/lorem.txt", { read: true });
+            const readBuf = await readFile.readAll();
+            log.info(">> file content =", decode(readBuf));
+          "#,
+        )
         .await
 }
 ```
+
+Check the [examples folder](./examples) for more examples.
