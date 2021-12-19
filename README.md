@@ -42,8 +42,8 @@ async fn main() -> Result<()> {
     let permissions = Permissions::builder()
         .add_state(Root::from(env!("CARGO_MANIFEST_DIR"))) // Root folder for files to be accessed.
         .add_permissions(&[
-            (FS::Open, &allow_list),
-            (FS::Read, &allow_list),
+            (Fs::Open, &allow_list),
+            (Fs::Read, &allow_list),
         ])?
         .build();
 

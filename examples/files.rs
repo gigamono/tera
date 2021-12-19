@@ -4,7 +4,7 @@ extern crate tera;
 
 use tera::{
     permissions::{
-        fs::{Path, Root, FS},
+        fs::{Fs, FsPath, FsRoot},
         Permissions,
     },
     Runtime,
@@ -14,7 +14,7 @@ use utilities::result::Result;
 #[tokio::main]
 async fn main() -> Result<()> {
     // Create permitted resources
-    let allow_list = [Path::from(concat!(
+    let allow_list = [FsPath::from(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/",
         "examples/txt"
@@ -22,11 +22,11 @@ async fn main() -> Result<()> {
 
     // Create permissions
     let permissions = Permissions::builder()
-        .add_state(Root::from(env!("CARGO_MANIFEST_DIR")))
+        .add_state(FsRoot::from(env!("CARGO_MANIFEST_DIR")))
         .add_permissions(&[
-            (FS::Open, &allow_list),
-            (FS::Read, &allow_list),
-            (FS::Write, &allow_list),
+            (Fs::Open, &allow_list),
+            (Fs::Read, &allow_list),
+            (Fs::Write, &allow_list),
         ])?
         .build();
 

@@ -8,21 +8,21 @@ use futures_util::{StreamExt, TryStreamExt};
 use tera::{
     events::{Events, HttpEvent, HttpResponder},
     permissions::{
-        events::event_http::{self, Path},
+        events::event_http::{self, HttpEventPath},
         Permissions,
     },
     Runtime,
 };
 use tokio::sync::mpsc::{self, Sender};
 use utilities::{
-    http::{Body, Request, Response},
+  hyper::{Body, Request, Response},
     result::Result,
 };
 
 #[tokio::main]
 async fn main() -> Result<()> {
     // Create permitted resources
-    let allow_list = [Path::from("/")];
+    let allow_list = [HttpEventPath::from("/")];
 
     // Create permissions
     let permissions = Permissions::builder()
@@ -61,10 +61,10 @@ async fn main() -> Result<()> {
     // Read main module code.
     let main_module_filename = "./examples/js/event_http.js";
     let main_module_code = r#"
-    const { request, respondWith } = httpEvent;
+    const { http } = events;
 
     // Read body.
-    const buf = await request.body.readAll();
+    const buf = await http.request.body.readAll();
 
     // Log body.
     log.info("request body decoded =", decode(buf));
@@ -78,7 +78,7 @@ async fn main() -> Result<()> {
 
     // Sending response body with fixed content length.
     async function sendFixedResponse() {
-      await respondWith(
+      await http.respondWith(
         new Response('{ "message": "Hello beep boop!" }', {
           headers: { "Content-Type": "application/json" },
         })
@@ -93,7 +93,7 @@ async fn main() -> Result<()> {
         }
       }
 
-      await respondWith(new Response(iterator()));
+      await http.respondWith(new Response(iterator()));
     }
     "#;
 

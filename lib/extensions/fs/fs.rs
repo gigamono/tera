@@ -1,6 +1,7 @@
 // Copyright 2021 the Gigamono authors. All rights reserved. Apache 2.0 license.
 // TODO(appcypher): Synchronisation needed with fcntl. Also applies to db. https://blog.cloudflare.com/durable-objects-easy-fast-correct-choose-three/
 
+use deno_core::anyhow::Context;
 use deno_core::{
     error::AnyError, include_js_files, op_async, Extension, OpState, Resource, ResourceId,
 };
@@ -13,7 +14,7 @@ use tokio::fs::{File, OpenOptions};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use utilities::errors;
 
-use crate::permissions::fs::{Path, FS};
+use crate::permissions::fs::{Fs, FsPath, FsRoot};
 use crate::permissions::Permissions;
 
 pub fn fs(permissions: Rc<Permissions>) -> Extension {
@@ -63,7 +64,6 @@ async fn op_fs_open(
     path: String,
     options: FileOptions,
 ) -> Result<ResourceId, AnyError> {
-    // TODO(appcypher): SEC: Support root prefix for path.
     let path = &path;
 
     // We use OS-supported permissions for files. Permissions are added on file open/creation.
@@ -71,21 +71,31 @@ async fn op_fs_open(
 
     // Check create permission.
     if options.create {
-        permissions.check(FS::Create, Path::from(path))?;
+        permissions.check(Fs::Create, FsPath::from(path))?;
     } else {
         // Check open permission.
-        permissions.check(FS::Open, Path::from(path))?;
+        permissions.check(Fs::Open, FsPath::from(path))?;
     }
 
     // Check read permission.
     if options.read {
-        permissions.check(FS::Read, Path::from(path))?;
+        permissions.check(Fs::Read, FsPath::from(path))?;
     }
 
     // Check write permission.
     if options.write {
-        permissions.check(FS::Write, Path::from(path))?;
+        permissions.check(Fs::Write, FsPath::from(path))?;
     }
+
+    // Get root path from permissions.
+    let root = if let Some(state) = &permissions.state {
+        state.downcast_ref::<FsRoot>().unwrap().as_ref()
+    } else {
+        return errors::permission_error_t("root path not specified");
+    };
+
+    // The full path.
+    let clean_full_path = &Fs::clean_path(path, root)?;
 
     // Open file with options specified.
     let file = OpenOptions::new()
@@ -94,8 +104,9 @@ async fn op_fs_open(
         .append(options.append)
         .truncate(options.truncate)
         .create(options.create)
-        .open(path)
-        .await?;
+        .open(clean_full_path)
+        .await
+        .context("opening a file")?;
 
     // Save file info for later.
     let rid = state.borrow_mut().resource_table.add(FileResource {

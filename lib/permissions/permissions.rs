@@ -33,7 +33,11 @@ pub trait PermissionType: std::fmt::Debug {
         format!("{}::{:?}", type_name::<Self>(), self)
     }
 
-    fn map(&self, allow_list: Vec<Box<dyn Resource>>) -> Result<Vec<Box<dyn Resource>>> {
+    fn map(
+        &self,
+        allow_list: Vec<Box<dyn Resource>>,
+        _state: &Option<Box<dyn State>>,
+    ) -> Result<Vec<Box<dyn Resource>>> {
         Ok(allow_list)
     }
 
@@ -47,8 +51,8 @@ pub trait PermissionType: std::fmt::Debug {
 
 #[derive(Default, Debug)]
 pub struct Permissions {
-    map: PermissionMap,
-    state: Option<Box<dyn State>>,
+    pub map: PermissionMap,
+    pub state: Option<Box<dyn State>>,
 }
 
 pub struct PermissionsBuilder {
@@ -111,7 +115,7 @@ impl PermissionsBuilder {
             let permission_key = permission_type.get_key();
 
             // Do possibly custom stuff on allow list before saving.
-            let allow_list = permission_type.map(allow_list)?;
+            let allow_list = permission_type.map(allow_list, &self.state)?;
 
             // Add permission type.
             self.map.insert(permission_key, Rc::new(allow_list));

@@ -4,7 +4,7 @@ use futures_util::FutureExt;
 use std::{future::Future, pin::Pin, rc::Rc};
 use tokio::sync::mpsc::Sender;
 use utilities::errors;
-use utilities::http::{Body, Request, Response};
+use utilities::hyper::{Body, Request, Response};
 use utilities::result::Result;
 
 use super::EventResponder;

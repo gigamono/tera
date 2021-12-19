@@ -5,7 +5,7 @@ use std::pin::Pin;
 use super::HttpEvent;
 use futures_util::Future;
 use utilities::{
-    http::{Body, Response},
+    hyper::{Body, Response},
     result::Result,
 };
 

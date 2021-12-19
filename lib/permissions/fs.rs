@@ -13,24 +13,24 @@ use utilities::{
 };
 
 #[derive(Debug, Copy, Clone)]
-pub enum FS {
+pub enum Fs {
     Open,
     Create,
     Read,
     Write,
-    Import,
+    Execute,
     Info,
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct Path(pub String);
+pub struct FsPath(pub String);
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 
-pub struct Root(pub String);
+pub struct FsRoot(pub String);
 
-impl FS {
-    fn clean_path(filename: &str, root: &str) -> Result<PathBuf> {
+impl Fs {
+    pub fn clean_path(filename: &str, root: &str) -> Result<PathBuf> {
         // ".." paths are not supported.
         if filename.starts_with("../") {
             return errors::new_error_t(format!(r#"no support for ".." paths, "{}""#, filename));
@@ -42,7 +42,7 @@ impl FS {
     }
 }
 
-impl PermissionType for FS {
+impl PermissionType for Fs {
     fn get_key<'a>(&self) -> PermissionTypeKey {
         PermissionTypeKey {
             type_id: TypeId::of::<Self>(),
@@ -50,26 +50,40 @@ impl PermissionType for FS {
         }
     }
 
-    fn map(&self, allow_list: Vec<Box<dyn Resource>>) -> Result<Vec<Box<dyn Resource>>> {
+    fn map(
+        &self,
+        allow_list: Vec<Box<dyn Resource>>,
+        state: &Option<Box<dyn State>>,
+    ) -> Result<Vec<Box<dyn Resource>>> {
         // Canonicalize every dir in the allow list.
         let canon_list = allow_list
             .iter()
             .map(|dir| {
-                let dir = &dir.downcast_ref::<Path>().unwrap().0;
+                // Downcast state to Root. Expects a root to be specified.
+                let root = if let Some(state) = &state {
+                    state.downcast_ref::<FsRoot>().unwrap().as_ref()
+                } else {
+                    return errors::permission_error_t("root path not specified");
+                };
+
+                let clean_full_dir =
+                    &Self::clean_path(&dir.downcast_ref::<FsPath>().unwrap().0, root)?;
 
                 // Relative path are not supported.
-                if !(dir.starts_with("/") || dir.starts_with("\\")) {
+                if !(clean_full_dir.starts_with("/") || clean_full_dir.starts_with("\\")) {
                     return errors::new_error_t(format!(
-                        r#"does not support non-absolute dirs in allow_list "{}""#,
-                        dir
+                        r#"does not support non-absolute dirs in allow_list "{:?}""#,
+                        clean_full_dir
                     ));
                 }
 
                 // Canonicalize dir.
-                let canon_dir = fs::canonicalize(dir)
-                    .context(format!(r#"canonicalizing allowed directory "{}""#, dir))?;
+                let canon_dir = fs::canonicalize(clean_full_dir).context(format!(
+                    r#"canonicalizing allowed directory "{:?}""#,
+                    clean_full_dir
+                ))?;
 
-                Ok(Path::from(canon_dir.display().to_string()).into())
+                Ok(FsPath::from(canon_dir.display().to_string()).into())
             })
             .collect::<Result<Vec<Box<dyn Resource>>>>()?;
 
@@ -84,22 +98,22 @@ impl PermissionType for FS {
     ) -> Result<()> {
         // Downcast state to Root. Expects a root to be specified.
         let root = if let Some(state) = state {
-            state.downcast_ref::<Root>().unwrap().as_ref().clone()
+            state.downcast_ref::<FsRoot>().unwrap().as_ref()
         } else {
             return errors::permission_error_t("root path not specified");
         };
 
         // Downcast filename to Path.
-        let filename = filename.downcast_ref::<Path>().unwrap().as_ref().clone();
+        let filename = filename.downcast_ref::<FsPath>().unwrap().as_ref();
 
-        // Path resolution is different for FS::Create as filename does not exist yet so we can't simply canonicalize on the filename. It will return an error.
+        // Path resolution is different for Fs::Create as filename does not exist yet so we can't simply canonicalize on the filename. It will return an error.
         let path = Self::clean_path(&filename, &root)?;
 
         // Check if `path` is a child of any dir in the allow_list.
         let mut found = false;
         for allowed_dir in allow_list.iter() {
             // Downcast trait object to Path.
-            let canon_allowed_dir = &allowed_dir.downcast_ref::<Path>().unwrap().0;
+            let canon_allowed_dir = &allowed_dir.downcast_ref::<FsPath>().unwrap().0;
 
             if path.starts_with(canon_allowed_dir) {
                 found = true;
@@ -119,85 +133,83 @@ impl PermissionType for FS {
     }
 }
 
-impl Resource for Path {
+impl Resource for FsPath {
     fn get_clone(&self) -> Box<dyn Resource> {
         Box::new(self.clone())
     }
 
     fn get_debug(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("Path").field(&self.0).finish()
+        f.debug_tuple("FsPath").field(&self.0).finish()
     }
 }
 
-impl State for Root {
+impl State for FsRoot {
     fn get_debug(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("Root").field(&self.0).finish()
+        f.debug_tuple("FsRoot").field(&self.0).finish()
     }
-
-
 }
 
-impl Into<Box<dyn PermissionType>> for FS {
+impl Into<Box<dyn PermissionType>> for Fs {
     fn into(self) -> Box<dyn PermissionType> {
         Box::new(self)
     }
 }
 
-impl Into<Box<dyn Resource>> for Path {
+impl Into<Box<dyn Resource>> for FsPath {
     fn into(self) -> Box<dyn Resource> {
         Box::new(self)
     }
 }
 
-impl Into<Box<dyn State>> for Root {
+impl Into<Box<dyn State>> for FsRoot {
     fn into(self) -> Box<dyn State> {
         Box::new(self)
     }
 }
 
-impl From<&str> for Path {
+impl From<&str> for FsPath {
     fn from(s: &str) -> Self {
         Self(s.into())
     }
 }
 
-impl From<&String> for Path {
+impl From<&String> for FsPath {
     fn from(s: &String) -> Self {
         Self(s.into())
     }
 }
 
-impl From<String> for Path {
+impl From<String> for FsPath {
     fn from(s: String) -> Self {
         Self(s)
     }
 }
 
-impl AsRef<String> for Path {
+impl AsRef<String> for FsPath {
     fn as_ref(&self) -> &String {
         &self.0
     }
 }
 
-impl From<&str> for Root {
+impl From<&str> for FsRoot {
     fn from(s: &str) -> Self {
         Self(s.into())
     }
 }
 
-impl From<&String> for Root {
+impl From<&String> for FsRoot {
     fn from(s: &String) -> Self {
         Self(s.into())
     }
 }
 
-impl From<String> for Root {
+impl From<String> for FsRoot {
     fn from(s: String) -> Self {
         Self(s)
     }
 }
 
-impl AsRef<String> for Root {
+impl AsRef<String> for FsRoot {
     fn as_ref(&self) -> &String {
         &self.0
     }

@@ -1,7 +1,18 @@
 // Copyright 2021 the Gigamono authors. All rights reserved. Apache 2.0 license.
 
-use crate::{events::Events, extensions, loaders, permissions::Permissions, RuntimeOptions};
-use deno_core::JsRuntime;
+use crate::{
+    events::Events,
+    extensions, loaders,
+    permissions::{
+        fs::{FsPath, Fs},
+        Permissions,
+    },
+    RuntimeOptions,
+};
+use deno_core::{
+    v8::{Global, Value},
+    JsRuntime,
+};
 use log::debug;
 use std::{cell::RefCell, path::PathBuf, rc::Rc};
 use tokio::fs;
@@ -88,7 +99,6 @@ impl Runtime {
         let mut rx = self.0.mod_evaluate(module_id);
 
         // Wait for message from module eval or event loop.
-        // TODO(appcypher): Test that unawaited async ops are not getting executed in js. open, fs_write for example.
         tokio::select! {
             maybe_result = &mut rx => {
                 Self::handle_reciever_error(maybe_result)?;
@@ -105,6 +115,25 @@ impl Runtime {
         };
 
         Ok(())
+    }
+
+    pub async fn execute_script(
+        &mut self,
+        path: &str,
+        permissions: Rc<Permissions>,
+    ) -> Result<Global<Value>> {
+        // Check permissions.
+        permissions.check(Fs::Execute, FsPath::from(path))?;
+
+        // Read content.
+        let content = fs::read_to_string(path)
+            .await
+            .context(format!(r#"getting script file, "{:?}""#, path))?;
+
+        // Execute postscript.
+        self.0
+            .execute_script(path, &content)
+            .context("executing postscript file")
     }
 
     async fn execute_postscripts(runtime: &mut JsRuntime) -> Result<()> {

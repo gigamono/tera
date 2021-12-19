@@ -17,12 +17,17 @@ pub enum HttpEvent {
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct Path(pub String);
+pub struct HttpEventPath(pub String);
 
 impl HttpEvent {
-    // Accepts url path patterns like `/v1/users/*`, `/v1/*/1/*`, `/v1/users*`
-    fn url_path_match(pattern: &str, test: &Path) -> Result<bool> {
-        let regex_pattern = &format!("^{}$", pattern.replace("*", ".*"));
+    /// Accepts url path patterns like `/users/*`, `/users/*/name`, `/v1/users*`
+    fn url_path_match(pattern: &str, test: &HttpEventPath) -> Result<bool> {
+        // * does not consume /. For example, /users/*/name won't match /users/1/some/secret/name but it will match /users/1/name.
+        // ** consumes /, so /users/*/name will match /users/1/some/secret/name.
+        let regex_pattern = &format!(
+            "^{}$",
+            pattern.replace("**", "[^?#]+").replace("*", "[^/?#]+")
+        );
         let re =
             Regex::new(&regex_pattern).context("compiling regex pattern for matching url path")?;
 
@@ -49,13 +54,13 @@ impl PermissionType for HttpEvent {
         _: &Option<Box<dyn State>>,
     ) -> Result<()> {
         // Downcast trait object to PathString.
-        let path = path.downcast_ref::<Path>().unwrap();
+        let path = path.downcast_ref::<HttpEventPath>().unwrap();
 
         // Check if `path` matches any path in allow_list.
         let mut found = false;
         for allowed_pattern in allow_list.iter() {
             // Downcast trait object to Path.
-            let allowed_pattern = &allowed_pattern.downcast_ref::<Path>().unwrap().0;
+            let allowed_pattern = &allowed_pattern.downcast_ref::<HttpEventPath>().unwrap().0;
 
             if Self::url_path_match(allowed_pattern, &path)? {
                 found = true;
@@ -75,13 +80,13 @@ impl PermissionType for HttpEvent {
     }
 }
 
-impl Resource for Path {
+impl Resource for HttpEventPath {
     fn get_clone(&self) -> Box<dyn Resource> {
         Box::new(self.clone())
     }
 
     fn get_debug(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("PathString").field(&self.0).finish()
+        f.debug_tuple("HttpEvent").field(&self.0).finish()
     }
 }
 
@@ -91,25 +96,25 @@ impl Into<Box<dyn PermissionType>> for HttpEvent {
     }
 }
 
-impl Into<Box<dyn Resource>> for Path {
+impl Into<Box<dyn Resource>> for HttpEventPath {
     fn into(self) -> Box<dyn Resource> {
         Box::new(self)
     }
 }
 
-impl From<&str> for Path {
+impl From<&str> for HttpEventPath {
     fn from(s: &str) -> Self {
         Self(s.into())
     }
 }
 
-impl From<&String> for Path {
+impl From<&String> for HttpEventPath {
     fn from(s: &String) -> Self {
         Self(s.into())
     }
 }
 
-impl AsRef<String> for Path {
+impl AsRef<String> for HttpEventPath {
     fn as_ref(&self) -> &String {
         &self.0
     }

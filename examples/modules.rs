@@ -2,14 +2,20 @@
 
 extern crate tera;
 
-use tera::{Runtime, permissions::{Permissions, fs::{FS, Path, Root}}};
+use tera::{
+    permissions::{
+        fs::{FsPath, FsRoot, Fs},
+        Permissions,
+    },
+    Runtime,
+};
 use tokio::fs;
 use utilities::result::Result;
 
 #[tokio::main]
 async fn main() -> Result<()> {
     // Create permitted resources
-    let allow_list = [Path::from(concat!(
+    let allow_list = [FsPath::from(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/",
         "examples/js"
@@ -17,8 +23,8 @@ async fn main() -> Result<()> {
 
     // Create permissions
     let permissions = Permissions::builder()
-        .add_state(Root::from(env!("CARGO_MANIFEST_DIR")))
-        .add_permissions(&[(FS::Import, &allow_list)])?
+        .add_state(FsRoot::from(env!("CARGO_MANIFEST_DIR")))
+        .add_permissions(&[(Fs::Execute, &allow_list)])?
         .build();
 
     // Create a new runtime.
