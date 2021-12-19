@@ -1,20 +1,20 @@
 // Copyright 2021 the Gigamono authors. All rights reserved. Apache 2.0 license.
 
-use std::{fs, pin::Pin, rc::Rc};
+use std::{cell::RefCell, fs, pin::Pin, rc::Rc};
 use utilities::{errors, result::Context};
 
 use deno_core::{futures::FutureExt, ModuleLoader, ModuleSource};
 
 use crate::permissions::{
-    fs::{FsPath, Fs},
+    fs::{Fs, FsPath},
     Permissions,
 };
 
 pub struct ESMLoader {
-    permissions: Rc<Permissions>,
+    permissions: Rc<RefCell<Permissions>>,
 }
 
-pub fn esm(permissions: Rc<Permissions>) -> ESMLoader {
+pub fn esm(permissions: Rc<RefCell<Permissions>>) -> ESMLoader {
     ESMLoader {
         permissions: permissions,
     }
@@ -61,6 +61,7 @@ impl ModuleLoader for ESMLoader {
 
             // Check permissions.
             permissions
+                .borrow()
                 .check(Fs::Execute, FsPath(module_path.into()))?;
 
             // Fetch module source.

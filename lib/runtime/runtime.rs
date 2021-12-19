@@ -1,14 +1,6 @@
 // Copyright 2021 the Gigamono authors. All rights reserved. Apache 2.0 license.
 
-use crate::{
-    events::Events,
-    extensions, loaders,
-    permissions::{
-        fs::{FsPath, Fs},
-        Permissions,
-    },
-    RuntimeOptions,
-};
+use crate::{events::Events, extensions, loaders, permissions::Permissions, RuntimeOptions};
 use deno_core::{
     v8::{Global, Value},
     JsRuntime,
@@ -18,10 +10,16 @@ use std::{cell::RefCell, path::PathBuf, rc::Rc};
 use tokio::fs;
 use utilities::result::{Context, Result};
 
-pub struct Runtime(JsRuntime);
+pub struct Runtime {
+    runtime: JsRuntime,
+    permissions: Rc<RefCell<Permissions>>,
+}
 
 impl Runtime {
-    pub async fn new(options: RuntimeOptions) -> Result<Self> {
+    pub async fn new(
+        options: RuntimeOptions,
+        permissions: Rc<RefCell<Permissions>>,
+    ) -> Result<Self> {
         // TODO(appcypher): Add support for memory snapshot after initialisation that can then be reused each time.
         // TODO(appcypher): SEC: Support specifying maximum_heap_size_in_bytes.
         // TODO(appcypher): SEC: Add a callback that panics for near_heap_limit_callback.
@@ -34,43 +32,50 @@ impl Runtime {
 
         debug!("Runtime started");
 
-        Ok(Self(runtime))
+        Ok(Self {
+            runtime,
+            permissions,
+        })
     }
 
-    pub async fn default_main(permissions: Permissions) -> Result<Self> {
-        // TODO(appcypher): Support other options destructured to replace. ..Default::default()
-        // TODO(appcypher): There should be a series of snapshots with different combination of extensions. Chosen based on permissions.
-        let permissions = Rc::new(permissions);
-
-        // Set runtime options
-        let opts = RuntimeOptions {
-            module_loader: Some(Rc::new(loaders::esm(permissions.clone()))),
-            extensions: vec![extensions::fs(permissions.clone())],
-            ..Default::default()
-        };
-
-        Self::new(opts).await
-    }
-
-    pub async fn default_event(
+    pub async fn with_permissions(
         permissions: Permissions,
-        events: Rc<RefCell<Events>>,
+        options: RuntimeOptions,
     ) -> Result<Self> {
         // TODO(appcypher): Support other options destructured to replace. ..Default::default()
         // TODO(appcypher): There should be a series of snapshots with different combination of extensions. Chosen based on permissions.
-        let permissions = Rc::new(permissions);
+        let permissions = Rc::new(RefCell::new(permissions));
 
         // Set runtime options
         let opts = RuntimeOptions {
-            module_loader: Some(Rc::new(loaders::esm(permissions.clone()))),
-            extensions: vec![
-                extensions::fs(permissions.clone()),
-                extensions::event_http(permissions.clone(), events),
-            ],
-            ..Default::default()
+            module_loader: Some(Rc::new(loaders::esm(Rc::clone(&permissions)))),
+            extensions: vec![extensions::fs(Rc::clone(&permissions))],
+            ..options
         };
 
-        Self::new(opts).await
+        Self::new(opts, permissions).await
+    }
+
+    pub async fn with_events(
+        permissions: Permissions,
+        events: Rc<RefCell<Events>>,
+        options: RuntimeOptions,
+    ) -> Result<Self> {
+        // TODO(appcypher): Support other options destructured to replace. ..Default::default()
+        // TODO(appcypher): There should be a series of snapshots with different combination of extensions. Chosen based on permissions.
+        let permissions = Rc::new(RefCell::new(permissions));
+
+        // Set runtime options
+        let opts = RuntimeOptions {
+            module_loader: Some(Rc::new(loaders::esm(Rc::clone(&permissions)))),
+            extensions: vec![
+                extensions::fs(Rc::clone(&permissions)),
+                extensions::event_http(Rc::clone(&permissions), events),
+            ],
+            ..options
+        };
+
+        Self::new(opts, permissions).await
     }
 
     pub async fn execute_module(
@@ -90,13 +95,13 @@ impl Runtime {
 
         // Load main module and deps.
         let module_id = self
-            .0
+            .runtime
             .load_main_module(&module_specifier, Some(module_code))
             .await
             .context("loading the main module")?;
 
         // Run main module.
-        let mut rx = self.0.mod_evaluate(module_id);
+        let mut rx = self.runtime.mod_evaluate(module_id);
 
         // Wait for message from module eval or event loop.
         tokio::select! {
@@ -104,9 +109,9 @@ impl Runtime {
                 Self::handle_reciever_error(maybe_result)?;
 
                 // Continue event loop.
-                self.0.run_event_loop(false).await.context("running the event loop")?;
+                self.runtime.run_event_loop(false).await.context("running the event loop")?;
             }
-            event_loop_result = self.0.run_event_loop(false) => {
+            event_loop_result = self.runtime.run_event_loop(false) => {
                 event_loop_result.context("running the event loop")?;
 
                 // Continue waiting on reciever.
@@ -117,23 +122,25 @@ impl Runtime {
         Ok(())
     }
 
-    pub async fn execute_script(
+    pub async fn execute_middleware_script(
         &mut self,
-        path: &str,
-        permissions: Rc<Permissions>,
+        filename: impl AsRef<str>,
+        script_code: impl AsRef<str>,
+        permissions: Permissions,
     ) -> Result<Global<Value>> {
-        // Check permissions.
-        permissions.check(Fs::Execute, FsPath::from(path))?;
+        // Replace existing permissions with new permissions.
+        let existing_permissions = self.permissions.replace(permissions);
 
-        // Read content.
-        let content = fs::read_to_string(path)
-            .await
-            .context(format!(r#"getting script file, "{:?}""#, path))?;
+        // Execute script.
+        let value = self
+            .runtime
+            .execute_script(filename.as_ref(), script_code.as_ref())
+            .context("executing script")?;
 
-        // Execute postscript.
-        self.0
-            .execute_script(path, &content)
-            .context("executing postscript file")
+        // Revert exising permissions.
+        let _ = self.permissions.replace(existing_permissions);
+
+        Ok(value)
     }
 
     async fn execute_postscripts(runtime: &mut JsRuntime) -> Result<()> {

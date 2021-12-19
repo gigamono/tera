@@ -15,7 +15,7 @@ use tera::{
 };
 use tokio::sync::mpsc::{self, Sender};
 use utilities::{
-  hyper::{Body, Request, Response},
+    hyper::{Body, Request, Response},
     result::Result,
 };
 
@@ -56,7 +56,7 @@ async fn main() -> Result<()> {
     let events = create_http_events(Rc::new(response_tx))?;
 
     // Create a new runtime.
-    let mut runtime = Runtime::default_event(permissions, events).await?;
+    let mut runtime = Runtime::with_events(permissions, events, Default::default()).await?;
 
     // Read main module code.
     let main_module_filename = "./examples/js/event_http.js";

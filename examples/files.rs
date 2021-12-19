@@ -14,11 +14,7 @@ use utilities::result::Result;
 #[tokio::main]
 async fn main() -> Result<()> {
     // Create permitted resources
-    let allow_list = [FsPath::from(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/",
-        "examples/txt"
-    ))];
+    let allow_list = [FsPath::from("examples/txt")];
 
     // Create permissions
     let permissions = Permissions::builder()
@@ -31,7 +27,7 @@ async fn main() -> Result<()> {
         .build();
 
     // Create a new runtime.
-    let mut runtime = Runtime::default_main(permissions).await?;
+    let mut runtime = Runtime::with_permissions(permissions, Default::default()).await?;
 
     // Execute main module.
     runtime
@@ -43,7 +39,7 @@ async fn main() -> Result<()> {
             log.info(">> file content =", decode(readBuf));
 
             const writeFile = await File.open("examples/txt/write.txt", { write: true });
-            const writeString = `This is a random value written to a file: ${Math.random()}`;
+            const writeString = `This is a random value written to a file: ${Math.random()}\n`;
             log.info(">> write string =", writeString);
             await writeFile.writeAll(encode(writeString));
           "#,

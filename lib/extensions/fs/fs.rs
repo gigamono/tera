@@ -17,7 +17,7 @@ use utilities::errors;
 use crate::permissions::fs::{Fs, FsPath, FsRoot};
 use crate::permissions::Permissions;
 
-pub fn fs(permissions: Rc<Permissions>) -> Extension {
+pub fn fs(permissions: Rc<RefCell<Permissions>>) -> Extension {
     let extension = Extension::builder()
         .js(include_js_files!(
             prefix "(tera:extensions) ",
@@ -30,7 +30,7 @@ pub fn fs(permissions: Rc<Permissions>) -> Extension {
             ("opFsSeek", op_async(op_fs_seek)),
         ])
         .state(move |state| {
-            if !state.has::<Permissions>() {
+            if !state.has::<Rc<RefCell<Permissions>>>() {
                 state.put(Rc::clone(&permissions));
             }
 
@@ -66,36 +66,39 @@ async fn op_fs_open(
 ) -> Result<ResourceId, AnyError> {
     let path = &path;
 
-    // We use OS-supported permissions for files. Permissions are added on file open/creation.
-    let permissions = Rc::clone(state.borrow().borrow::<Rc<Permissions>>());
+    let clean_full_path = {
+        // We use OS-supported permissions for files. Permissions are added on file open/creation.
+        let permissions_rc = Rc::clone(state.borrow().borrow::<Rc<RefCell<Permissions>>>());
+        let permissions = permissions_rc.borrow();
 
-    // Check create permission.
-    if options.create {
-        permissions.check(Fs::Create, FsPath::from(path))?;
-    } else {
-        // Check open permission.
-        permissions.check(Fs::Open, FsPath::from(path))?;
-    }
+        // Check create permission.
+        if options.create {
+            permissions.check(Fs::Create, FsPath::from(path))?;
+        } else {
+            // Check open permission.
+            permissions.check(Fs::Open, FsPath::from(path))?;
+        }
 
-    // Check read permission.
-    if options.read {
-        permissions.check(Fs::Read, FsPath::from(path))?;
-    }
+        // Check read permission.
+        if options.read {
+            permissions.check(Fs::Read, FsPath::from(path))?;
+        }
 
-    // Check write permission.
-    if options.write {
-        permissions.check(Fs::Write, FsPath::from(path))?;
-    }
+        // Check write permission.
+        if options.write {
+            permissions.check(Fs::Write, FsPath::from(path))?;
+        }
 
-    // Get root path from permissions.
-    let root = if let Some(state) = &permissions.state {
-        state.downcast_ref::<FsRoot>().unwrap().as_ref()
-    } else {
-        return errors::permission_error_t("root path not specified");
+        // Get root path from permissions.
+        let root = if let Some(state) = &permissions.state {
+            state.downcast_ref::<FsRoot>().unwrap().as_ref()
+        } else {
+            return errors::permission_error_t("root path not specified");
+        };
+
+        // The full path.
+        &Fs::clean_path(path, root)?
     };
-
-    // The full path.
-    let clean_full_path = &Fs::clean_path(path, root)?;
 
     // Open file with options specified.
     let file = OpenOptions::new()

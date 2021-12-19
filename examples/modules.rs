@@ -4,7 +4,7 @@ extern crate tera;
 
 use tera::{
     permissions::{
-        fs::{FsPath, FsRoot, Fs},
+        fs::{Fs, FsPath, FsRoot},
         Permissions,
     },
     Runtime,
@@ -15,11 +15,7 @@ use utilities::result::Result;
 #[tokio::main]
 async fn main() -> Result<()> {
     // Create permitted resources
-    let allow_list = [FsPath::from(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/",
-        "examples/js"
-    ))];
+    let allow_list = [FsPath::from("examples/js")];
 
     // Create permissions
     let permissions = Permissions::builder()
@@ -28,7 +24,7 @@ async fn main() -> Result<()> {
         .build();
 
     // Create a new runtime.
-    let mut runtime = Runtime::default_main(permissions).await?;
+    let mut runtime = Runtime::with_permissions(permissions, Default::default()).await?;
 
     // Get main module code.
     let main_module_filename = "./examples/js/modules.js";
