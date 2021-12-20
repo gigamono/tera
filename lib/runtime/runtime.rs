@@ -2,7 +2,7 @@
 
 use crate::{events::Events, extensions, loaders, permissions::Permissions, RuntimeOptions};
 use deno_core::{
-    v8::{Global, Value},
+    v8::{Global, Value, self},
     JsRuntime,
 };
 use log::debug;
@@ -141,6 +141,10 @@ impl Runtime {
         let _ = self.permissions.replace(existing_permissions);
 
         Ok(value)
+    }
+
+    pub fn handle_scope(&mut self) -> v8::HandleScope  {
+        self.runtime.handle_scope()
     }
 
     async fn execute_postscripts(runtime: &mut JsRuntime) -> Result<()> {
