@@ -1293,6 +1293,7 @@ dependencies = [
  "downcast-rs",
  "futures-core",
  "futures-util",
+ "lazy_static",
  "log",
  "path-clean",
  "regex",

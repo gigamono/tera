@@ -27,7 +27,7 @@ async fn main() -> Result<()> {
         .build();
 
     // Create a new runtime.
-    let mut runtime = Runtime::with_permissions(permissions, Default::default()).await?;
+    let mut runtime = Runtime::with_permissions(permissions, false, Default::default()).await?;
 
     // Execute main module.
     runtime

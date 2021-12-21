@@ -24,7 +24,7 @@ async fn main() -> Result<()> {
         .build();
 
     // Create a new runtime.
-    let mut runtime = Runtime::with_permissions(permissions, Default::default()).await?;
+    let mut runtime = Runtime::with_permissions(permissions, false, Default::default()).await?;
 
     // Get main module code.
     let main_module_filename = "./examples/js/modules.js";

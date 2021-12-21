@@ -56,7 +56,7 @@ async fn main() -> Result<()> {
     let events = create_http_events(Rc::new(response_tx))?;
 
     // Create a new runtime.
-    let mut runtime = Runtime::with_events(permissions, events, Default::default()).await?;
+    let mut runtime = Runtime::with_events(permissions, events, false,Default::default()).await?;
 
     // Read main module code.
     let main_module_filename = "./examples/js/event_http.js";

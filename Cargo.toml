@@ -25,6 +25,10 @@ path-clean = "0.1.0"
 regex = "1.5.4"
 futures-util = "0.3.17"
 futures-core = "0.3.17"
+lazy_static = "1.4.0"
+
+[build-dependencies]
+deno_core = "0.108.0"
 
 [lib]
 name = "tera"

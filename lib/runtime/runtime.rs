@@ -2,12 +2,15 @@
 
 use crate::{events::Events, extensions, loaders, permissions::Permissions, RuntimeOptions};
 use deno_core::{
-    v8::{Global, Value, self},
-    JsRuntime,
+    anyhow::Error,
+    parking_lot::Mutex,
+    v8::{self, Global, Value},
+    Extension, JsRuntime, Snapshot,
 };
-use log::debug;
+use log::{debug, info};
+use regex::Regex;
+use std::fs;
 use std::{cell::RefCell, path::PathBuf, rc::Rc};
-use tokio::fs;
 use utilities::result::{Context, Result};
 
 pub struct Runtime {
@@ -17,20 +20,46 @@ pub struct Runtime {
 
 impl Runtime {
     pub async fn new(
-        options: RuntimeOptions,
         permissions: Rc<RefCell<Permissions>>,
+        enable_snapshot: bool,
+        mut options: RuntimeOptions,
     ) -> Result<Self> {
-        // TODO(appcypher): Add support for memory snapshot after initialisation that can then be reused each time.
         // TODO(appcypher): SEC: Support specifying maximum_heap_size_in_bytes.
         // TODO(appcypher): SEC: Add a callback that panics for near_heap_limit_callback.
 
-        // Create a new runtime.
+        // Check if there is a startup snapshot.
+        let has_startup_snapshot = options.startup_snapshot.is_some();
+
+        debug!("Snapshot enabled = {}", enable_snapshot);
+        debug!("Snapshot available = {}", has_startup_snapshot);
+
+        // We create a new snapshot if snapshot is enabled but does not yet exist.
+        if enable_snapshot && !has_startup_snapshot {
+            debug!("Creating a snapshot runtime");
+
+            // Get options tailored for snapshot.
+            let snapshot_options = Self::create_snapshot_options(&options);
+
+            // Create a temp runtime to prevent panic in the main runtime after creating a snapshot.
+            let mut snapshot_runtime = JsRuntime::new(snapshot_options);
+
+            // Execute postscripts and create snapshot.
+            Self::execute_postscripts(&mut snapshot_runtime)?;
+            Self::create_snapshot(&mut snapshot_runtime)?;
+
+            // Update options with the new snapshot.
+            options.startup_snapshot = Some(Snapshot::Boxed(Self::get_snapshot()));
+
+            debug!("Dropping temp snapshot runtime");
+        }
+
+        // Create main runtime.
         let mut runtime = JsRuntime::new(options);
 
-        // Execute postscripts.
-        Self::execute_postscripts(&mut runtime).await?;
-
-        debug!("Runtime started");
+        if !enable_snapshot {
+            debug!("Runtime will not use snapshot");
+            Self::execute_postscripts(&mut runtime)?;
+        }
 
         Ok(Self {
             runtime,
@@ -40,30 +69,39 @@ impl Runtime {
 
     pub async fn with_permissions(
         permissions: Permissions,
+        enable_snapshot: bool,
         options: RuntimeOptions,
     ) -> Result<Self> {
-        // TODO(appcypher): Support other options destructured to replace. ..Default::default()
-        // TODO(appcypher): There should be a series of snapshots with different combination of extensions. Chosen based on permissions.
         let permissions = Rc::new(RefCell::new(permissions));
+
+        let mut startup_snapshot = None;
+        if enable_snapshot && Self::snapshot_exists() {
+            startup_snapshot = Some(Snapshot::Boxed(Self::get_snapshot()));
+        }
 
         // Set runtime options
         let opts = RuntimeOptions {
             module_loader: Some(Rc::new(loaders::esm(Rc::clone(&permissions)))),
             extensions: vec![extensions::fs(Rc::clone(&permissions))],
+            startup_snapshot,
             ..options
         };
 
-        Self::new(opts, permissions).await
+        Self::new(permissions, enable_snapshot, opts).await
     }
 
     pub async fn with_events(
         permissions: Permissions,
         events: Rc<RefCell<Events>>,
+        enable_snapshot: bool,
         options: RuntimeOptions,
     ) -> Result<Self> {
-        // TODO(appcypher): Support other options destructured to replace. ..Default::default()
-        // TODO(appcypher): There should be a series of snapshots with different combination of extensions. Chosen based on permissions.
         let permissions = Rc::new(RefCell::new(permissions));
+
+        let mut startup_snapshot = None;
+        if enable_snapshot && Self::snapshot_exists() {
+            startup_snapshot = Some(Snapshot::Boxed(Self::get_snapshot()));
+        }
 
         // Set runtime options
         let opts = RuntimeOptions {
@@ -72,10 +110,11 @@ impl Runtime {
                 extensions::fs(Rc::clone(&permissions)),
                 extensions::event_http(Rc::clone(&permissions), events),
             ],
+            startup_snapshot,
             ..options
         };
 
-        Self::new(opts, permissions).await
+        Self::new(permissions, enable_snapshot, opts).await
     }
 
     pub async fn execute_module(
@@ -143,19 +182,20 @@ impl Runtime {
         Ok(value)
     }
 
-    pub fn handle_scope(&mut self) -> v8::HandleScope  {
+    pub fn handle_scope(&mut self) -> v8::HandleScope {
         self.runtime.handle_scope()
     }
 
-    async fn execute_postscripts(runtime: &mut JsRuntime) -> Result<()> {
-        // TODO(appcypher): Instead of fetching the postscripts at runtime, we should add them statically at compile time. Embedded in the binary for faster load time. Minified maybe
-        // TODO(appcypher): Also support skipping builtin postcripts and loading user-specified ones at runtime.
+    fn execute_postscripts(runtime: &mut JsRuntime) -> Result<()> {
+        // TODO(appcypher): Need to make it possible for users to skip Tera's postscripts and add their own.
         // Get postcripts directory.
-        let postscripts_dir =
-            &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("lib/runtime/postscripts");
+        let postscripts_dir = &PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/lib/runtime/postscripts"
+        ));
 
         // Blindly assume everything in directory is a postscript.
-        let mut postscripts = std::fs::read_dir(postscripts_dir)
+        let mut postscripts = fs::read_dir(postscripts_dir)
             .context(format!(r#"reading postcripts dir "{:?}""#, postscripts_dir))?
             .map(|entry| -> Result<PathBuf> {
                 Ok(entry
@@ -170,7 +210,6 @@ impl Runtime {
         for path in postscripts.iter() {
             // Read content.
             let content = fs::read_to_string(&path)
-                .await
                 .context(format!(r#"getting postscript file, "{:?}""#, path))?;
 
             // Execute postscript.
@@ -179,7 +218,70 @@ impl Runtime {
                 .context("executing postscript file")?;
         }
 
+        info!("Executed postscripts");
+
         Ok(())
+    }
+
+    fn create_snapshot_options(options: &RuntimeOptions) -> RuntimeOptions {
+        // Construct the extensions. We only need the source pairs from the extensions. core/runtime.rs#init_extension_js
+        let mut extensions: Vec<Extension> = vec![];
+        for ext in &options.extensions {
+            let mut js_files: Vec<(&'static str, Box<dyn Fn() -> Result<String, Error>>)> = vec![];
+
+            for (filepath, _) in ext.init_js() {
+                let filepath_rc = Rc::new(filepath.to_string());
+
+                let pair: (&'static str, Box<dyn Fn() -> Result<String, Error>>) = (
+                    filepath,
+                    Box::new(move || {
+                        // Replace the file prefix.
+                        let re = Regex::new(r"^\(.+\)\s*").unwrap();
+                        let result =
+                            re.replace_all(filepath_rc.as_str(), env!("CARGO_MANIFEST_DIR"));
+
+                        debug!("Script to be loaded into snapshot = {}", result);
+
+                        Ok(fs::read_to_string(result.as_ref())?)
+                    }),
+                );
+
+                js_files.push(pair);
+            }
+
+            extensions.push(Extension::builder().js(js_files).build())
+        }
+
+        RuntimeOptions {
+            extensions,
+            will_snapshot: true,
+            ..Default::default()
+        }
+    }
+
+    fn create_snapshot(runtime: &mut JsRuntime) -> Result<()> {
+        let startup_data = runtime.snapshot();
+        *SNAPSHOT.lock() = startup_data.to_vec();
+
+        info!("Created a new snapshot");
+
+        Ok(())
+    }
+
+    fn get_snapshot() -> Box<[u8]> {
+        debug!("Using snapshot");
+        // TODO: Explore Snapshot::Static(...) options.
+        // Not going to be as fast as .as_ref() but it should suffice.
+        SNAPSHOT.lock().clone().into_boxed_slice()
+    }
+
+    pub fn snapshot_exists() -> bool {
+        // Caveat: Scripts loaded in snapshots are not watched for changes.
+        if SNAPSHOT.lock().len() > 0 {
+            return true;
+        }
+
+        false
     }
 
     fn handle_reciever_error<T: std::error::Error + 'static + Send + Sync>(
@@ -187,4 +289,8 @@ impl Runtime {
     ) -> Result<()> {
         result?.context("running the event loop".to_string())
     }
+}
+
+lazy_static! {
+    static ref SNAPSHOT: Mutex<Vec<u8>> = Mutex::new(vec![]);
 }
