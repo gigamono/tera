@@ -1,7 +1,9 @@
 // Copyright 2021 the Gigamono authors. All rights reserved. Apache 2.0 license.
 
 use super::{PermissionType, PermissionTypeKey, Resource, State};
+use log::debug;
 use path_clean::PathClean;
+use regex::Regex;
 use std::{
     any::TypeId,
     convert::TryFrom,
@@ -29,13 +31,16 @@ pub enum Fs {
 /// This is always relative to `FsRoot`.
 ///
 /// Expects a relative `path` and does not support paths starting with `../`.
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct FsPath(PathBuf);
+#[derive(Clone, Debug)]
+pub struct FsPath {
+    path: PathBuf,
+    regex: Option<Regex>, // The regex representation of the path.
+}
 
 /// Fs permission requires a root to be specified.
 ///
 /// Path will be resolved to a canonical absolute path.
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub struct FsRoot(PathBuf);
 
 impl Fs {
@@ -93,15 +98,36 @@ impl PermissionType for Fs {
 
                 let path = dir.downcast_ref::<FsPath>().unwrap().as_ref();
 
-                let clean_full_dir = &Self::clean_path(path, root)?;
+                let clean_full_dir = Self::clean_path(path, root)?;
 
-                // Canonicalize dir.
-                let canon_dir = fs::canonicalize(clean_full_dir).context(format!(
-                    r#"canonicalizing allowed directory {:?}"#,
-                    clean_full_dir
-                ))?;
+                debug!("Allowed path = {:?}", clean_full_dir);
 
-                Ok(FsPath::from(canon_dir).into())
+                let re_sep = utilities::path::get_platform_sep_pattern();
+
+                // SEC: Convert path to UTF-8 string.
+                let path_string = clean_full_dir
+                    .as_os_str()
+                    .to_owned()
+                    .into_string()
+                    .map_err(|e| {
+                        errors::new_error(format!("converting path name to utf-8 string {:?}", e))
+                    })?;
+
+                // SEC: Create regex that allows patterns like these:
+                // https://gist.github.com/appcypher/7074d219493fa2711c36b2d19fe75eb9#file-patterns-md
+                let pattern = path_string
+                    .replace("**", r".+")
+                    .replace("*", &format!(r"[^{}]+", re_sep));
+
+                // SEC: Ensuring the pattern matches against the whole string.
+                let re = Regex::new(&format!(r"^{}$", pattern)).unwrap();
+
+                let fs_path = FsPath {
+                    path: clean_full_dir,
+                    regex: Some(re),
+                };
+
+                Ok(fs_path.into())
             })
             .collect::<Result<Vec<Box<dyn Resource>>>>()?;
 
@@ -110,7 +136,7 @@ impl PermissionType for Fs {
 
     fn check(
         &self,
-        filename: &Box<dyn Resource>,
+        path: &Box<dyn Resource>,
         allow_list: Rc<Vec<Box<dyn Resource>>>,
         state: &Option<Box<dyn State>>,
     ) -> Result<()> {
@@ -121,33 +147,32 @@ impl PermissionType for Fs {
             return errors::permission_error_t("root path not specified");
         };
 
-        // Downcast filename to Path.
-        let filename = filename.downcast_ref::<FsPath>().unwrap().as_ref();
+        // Downcast path to FsPath.
+        let path = path.downcast_ref::<FsPath>().unwrap().as_ref();
 
         // Clean path.
-        let path = Self::clean_path(&filename, &root)?;
+        let path = &Self::clean_path(&path, &root)?;
 
-        // Check if `path` is a child of any dir in the allow_list.
-        let mut found = false;
+        // Check for any allowed dir that matches pattern.
         for allowed_dir in allow_list.iter() {
             // Downcast trait object to Path.
-            let canon_allowed_dir = &allowed_dir.downcast_ref::<FsPath>().unwrap().0;
+            let fs_path = allowed_dir.downcast_ref::<FsPath>().unwrap();
 
-            if path.starts_with(canon_allowed_dir) {
-                found = true;
-                break;
+            // SEC: Convert path to UTF-8 string.
+            let path_string = path.as_os_str().to_owned().into_string().map_err(|e| {
+                errors::new_error(format!("converting path name to utf-8 string {:?}", e))
+            })?;
+
+            if fs_path.regex.as_ref().unwrap().is_match(&path_string) {
+                return Ok(());
             }
         }
 
-        if !found {
-            return errors::permission_error_t(format!(
-                r#"permission type "{}" does not exist for file {:?}"#,
-                self.get_type(),
-                filename
-            ));
-        }
-
-        Ok(())
+        errors::permission_error_t(format!(
+            r#"permission type "{}" does not exist for file {:?}"#,
+            self.get_type(),
+            path
+        ))
     }
 }
 
@@ -157,7 +182,7 @@ impl Resource for FsPath {
     }
 
     fn get_debug(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("FsPath").field(&self.0).finish()
+        f.debug_struct("FsPath").field("path", &self.path).finish()
     }
 }
 
@@ -187,43 +212,61 @@ impl Into<Box<dyn State>> for FsRoot {
 
 impl From<&Path> for FsPath {
     fn from(path: &Path) -> Self {
-        Self(path.into())
+        Self {
+            path: path.into(),
+            regex: None,
+        }
     }
 }
 
 impl From<&PathBuf> for FsPath {
     fn from(path: &PathBuf) -> Self {
-        Self(path.into())
+        Self {
+            path: path.into(),
+            regex: None,
+        }
     }
 }
 
 impl From<PathBuf> for FsPath {
     fn from(path: PathBuf) -> Self {
-        Self(path)
+        Self {
+            path: path,
+            regex: None,
+        }
     }
 }
 
 impl From<&str> for FsPath {
     fn from(path: &str) -> Self {
-        Self(path.into())
+        Self {
+            path: path.into(),
+            regex: None,
+        }
     }
 }
 
 impl From<&String> for FsPath {
     fn from(path: &String) -> Self {
-        Self(path.into())
+        Self {
+            path: path.into(),
+            regex: None,
+        }
     }
 }
 
 impl From<String> for FsPath {
     fn from(path: String) -> Self {
-        Self(path.into())
+        Self {
+            path: path.into(),
+            regex: None,
+        }
     }
 }
 
 impl AsRef<Path> for FsPath {
     fn as_ref(&self) -> &Path {
-        &self.0
+        &self.path
     }
 }
 

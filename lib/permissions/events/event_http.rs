@@ -3,7 +3,7 @@
 use crate::permissions::{PermissionType, PermissionTypeKey};
 use std::any::TypeId;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 pub enum HttpEvent {
     ReadRequest,
     ModifyRequest,
