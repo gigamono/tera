@@ -116,7 +116,7 @@ impl PermissionsBuilder {
         self
     }
 
-    pub fn add_permissions_with_allow_list(
+    pub fn add_permissions_with_allow_lists(
         mut self,
         permissions: &[(
             impl Into<Box<dyn PermissionType>> + Clone,
@@ -141,6 +141,28 @@ impl PermissionsBuilder {
         Ok(self)
     }
 
+    pub fn add_owned_permissions_with_allow_lists(
+        mut self,
+        permissions: Vec<(Box<dyn PermissionType>, Vec<Box<dyn Resource>>)>,
+    ) -> Result<Self> {
+        for (permission_type, resources) in permissions.into_iter() {
+            // Construct resource hashset from allow_list.
+            let allow_list = Vec::from_iter(resources.into_iter().map(|s| s));
+
+            // Get permission key from permission type.
+            let permission_type: Box<dyn PermissionType> = permission_type;
+            let permission_key = permission_type.get_key();
+
+            // Do possibly custom stuff on allow list before saving.
+            let allow_list = permission_type.map(allow_list, &self.state)?;
+
+            // Add permission type.
+            self.map.insert(permission_key, Rc::new(allow_list));
+        }
+
+        Ok(self)
+    }
+
     pub fn add_permissions(
         mut self,
         permissions: &[impl Into<Box<dyn PermissionType>> + Clone],
@@ -148,6 +170,22 @@ impl PermissionsBuilder {
         for permission_type in permissions.iter() {
             // Get permission key from permission type.
             let permission_type: Box<dyn PermissionType> = permission_type.clone().into();
+            let permission_key = permission_type.get_key();
+
+            // Add permission type.
+            self.map.insert(permission_key, Rc::new(vec![]));
+        }
+
+        Ok(self)
+    }
+
+    pub fn add_owned_permissions(
+        mut self,
+        permissions: Vec<Box<dyn PermissionType>>,
+    ) -> Result<Self> {
+        for permission_type in permissions.into_iter() {
+            // Get permission key from permission type.
+            let permission_type: Box<dyn PermissionType> = permission_type;
             let permission_key = permission_type.get_key();
 
             // Add permission type.

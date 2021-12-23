@@ -22,7 +22,7 @@ async fn main() -> Result<()> {
     // Create permissions
     let permissions = Permissions::builder()
         .add_state(FsRoot::try_from(env!("CARGO_MANIFEST_DIR"))?)
-        .add_permissions_with_allow_list(&[(Fs::Execute, &allow_list)])?
+        .add_permissions_with_allow_lists(&[(Fs::Execute, &allow_list)])?
         .build();
 
     // Create a new runtime.
