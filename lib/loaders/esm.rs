@@ -62,7 +62,7 @@ impl ModuleLoader for ESMLoader {
             // Check permissions.
             permissions
                 .borrow()
-                .check(Fs::Execute, FsPath(module_path.into()))?;
+                .check(Fs::Execute, FsPath::from(module_path))?;
 
             // Fetch module source.
             let code = fs::read_to_string(module_path)

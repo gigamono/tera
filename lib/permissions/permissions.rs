@@ -46,7 +46,9 @@ pub trait PermissionType: std::fmt::Debug {
         _resource: &Box<dyn Resource>,
         _allow_list: Rc<Vec<Box<dyn Resource>>>,
         _state: &Option<Box<dyn State>>,
-    ) -> Result<()>;
+    ) -> Result<()> {
+        unimplemented!()
+    }
 }
 
 #[derive(Default, Debug)]
@@ -84,6 +86,21 @@ impl Permissions {
             Some(allow_list) => permission.check(&resource, Rc::clone(allow_list), &self.state),
         }
     }
+
+    pub fn check_exists(&self, permission: impl Into<Box<dyn PermissionType>>) -> Result<()> {
+        let permission = &permission.into();
+        let permission_key = &permission.get_key();
+
+        // Check permission type exists.
+        if let None = self.map.get(permission_key) {
+            return errors::permission_error_t(format!(
+                r#"permission type "{}" does not exist"#,
+                permission.get_type(),
+            ));
+        }
+
+        Ok(())
+    }
 }
 
 impl PermissionsBuilder {
@@ -99,7 +116,7 @@ impl PermissionsBuilder {
         self
     }
 
-    pub fn add_permissions(
+    pub fn add_permissions_with_allow_list(
         mut self,
         permissions: &[(
             impl Into<Box<dyn PermissionType>> + Clone,
@@ -119,6 +136,22 @@ impl PermissionsBuilder {
 
             // Add permission type.
             self.map.insert(permission_key, Rc::new(allow_list));
+        }
+
+        Ok(self)
+    }
+
+    pub fn add_permissions(
+        mut self,
+        permissions: &[impl Into<Box<dyn PermissionType>> + Clone],
+    ) -> Result<Self> {
+        for permission_type in permissions.iter() {
+            // Get permission key from permission type.
+            let permission_type: Box<dyn PermissionType> = permission_type.clone().into();
+            let permission_key = permission_type.get_key();
+
+            // Add permission type.
+            self.map.insert(permission_key, Rc::new(vec![]));
         }
 
         Ok(self)

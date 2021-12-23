@@ -1,7 +1,6 @@
 // Copyright 2021 the Gigamono authors. All rights reserved. Apache 2.0 license.
 // TODO(appcypher): Synchronisation needed with fcntl. Also applies to db. https://blog.cloudflare.com/durable-objects-easy-fast-correct-choose-three/
 
-use deno_core::anyhow::Context;
 use deno_core::{
     error::AnyError, include_js_files, op_async, Extension, OpState, Resource, ResourceId,
 };
@@ -9,6 +8,7 @@ use deno_core::{AsyncRefCell, RcRef, ZeroCopyBuf};
 use serde::Deserialize;
 use std::cell::RefCell;
 use std::io::SeekFrom;
+use std::path::PathBuf;
 use std::rc::Rc;
 use tokio::fs::{File, OpenOptions};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
@@ -97,7 +97,7 @@ async fn op_fs_open(
         };
 
         // The full path.
-        &Fs::clean_path(path, root)?
+        &Fs::clean_path(&PathBuf::from(path), root)?
     };
 
     // Open file with options specified.
@@ -108,8 +108,7 @@ async fn op_fs_open(
         .truncate(options.truncate)
         .create(options.create)
         .open(clean_full_path)
-        .await
-        .context("opening a file")?;
+        .await?;
 
     // Save file info for later.
     let rid = state.borrow_mut().resource_table.add(FileResource {

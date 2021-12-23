@@ -1,17 +1,20 @@
 // Copyright 2021 the Gigamono authors. All rights reserved. Apache 2.0 license.
 
-//! This permission type guards accessto the file system.
-//! It does not support paths starting with "..".
-//! https://fuchsia.googlesource.com/docs/+/d4f9b980f18fc6722b06abb693240b29abbbc9fc/dotdot.md
-
 use super::{PermissionType, PermissionTypeKey, Resource, State};
 use path_clean::PathClean;
-use std::{any::TypeId, fs, path::PathBuf, rc::Rc};
+use std::{
+    any::TypeId,
+    convert::TryFrom,
+    fs,
+    path::{Path, PathBuf},
+    rc::Rc,
+};
 use utilities::{
-    errors,
+    errors::{self, SystemError},
     result::{Context, Result},
 };
 
+/// The access levels of the Fs permission.
 #[derive(Debug, Copy, Clone)]
 pub enum Fs {
     Open,
@@ -22,23 +25,45 @@ pub enum Fs {
     Info,
 }
 
+/// Represents the resource path.
+/// This is always relative to `FsRoot`.
+///
+/// Expects a relative `path` and does not support paths starting with `../`.
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct FsPath(pub String);
+pub struct FsPath(PathBuf);
 
+/// Fs permission requires a root to be specified.
+///
+/// Path will be resolved to a canonical absolute path.
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-
-pub struct FsRoot(pub String);
+pub struct FsRoot(PathBuf);
 
 impl Fs {
-    pub fn clean_path(filename: &str, root: &str) -> Result<PathBuf> {
-        // ".." paths are not supported.
-        if filename.starts_with("../") {
-            return errors::new_error_t(format!(r#"no support for ".." paths, "{}""#, filename));
+    /// Joins specified path with its root to form an absolute path, then subsequently cleans it.
+    ///
+    /// Resolves `..`, `.` and removing excess separator in the absolute path.
+    ///
+    /// Expects a relative `path` and does not support paths starting with `../`.
+    pub fn clean_path(path: &Path, root: &Path) -> Result<PathBuf> {
+        // SEC: Paths starting with "../"  are not supported.
+        // https://fuchsia.googlesource.com/docs/+/d4f9b980f18fc6722b06abb693240b29abbbc9fc/dotdot.md
+        if path.starts_with(PathBuf::from("..")) {
+            return errors::new_error_t(format!(r#"no support for ".." paths, {:?}"#, path));
         }
 
-        let full_path = format!("{}/{}", root, filename);
+        // Join paths.
+        let full_path: PathBuf = [root, path].iter().collect();
 
-        Ok(PathBuf::from(full_path).clean())
+        Ok(full_path.clean())
+    }
+}
+
+impl FsRoot {
+    fn canonicalize(path: PathBuf) -> Result<PathBuf> {
+        fs::canonicalize(&path).context(format!(
+            r#"canonicalizing root dir of fs permission {:?}"#,
+            path
+        ))
     }
 }
 
@@ -66,24 +91,17 @@ impl PermissionType for Fs {
                     return errors::permission_error_t("root path not specified");
                 };
 
-                let clean_full_dir =
-                    &Self::clean_path(&dir.downcast_ref::<FsPath>().unwrap().0, root)?;
+                let path = dir.downcast_ref::<FsPath>().unwrap().as_ref();
 
-                // Relative path are not supported.
-                if !(clean_full_dir.starts_with("/") || clean_full_dir.starts_with("\\")) {
-                    return errors::new_error_t(format!(
-                        r#"does not support non-absolute dirs in allow_list "{:?}""#,
-                        clean_full_dir
-                    ));
-                }
+                let clean_full_dir = &Self::clean_path(path, root)?;
 
                 // Canonicalize dir.
                 let canon_dir = fs::canonicalize(clean_full_dir).context(format!(
-                    r#"canonicalizing allowed directory "{:?}""#,
+                    r#"canonicalizing allowed directory {:?}"#,
                     clean_full_dir
                 ))?;
 
-                Ok(FsPath::from(canon_dir.display().to_string()).into())
+                Ok(FsPath::from(canon_dir).into())
             })
             .collect::<Result<Vec<Box<dyn Resource>>>>()?;
 
@@ -106,7 +124,7 @@ impl PermissionType for Fs {
         // Downcast filename to Path.
         let filename = filename.downcast_ref::<FsPath>().unwrap().as_ref();
 
-        // Path resolution is different for Fs::Create as filename does not exist yet so we can't simply canonicalize on the filename. It will return an error.
+        // Clean path.
         let path = Self::clean_path(&filename, &root)?;
 
         // Check if `path` is a child of any dir in the allow_list.
@@ -167,50 +185,104 @@ impl Into<Box<dyn State>> for FsRoot {
     }
 }
 
+impl From<&Path> for FsPath {
+    fn from(path: &Path) -> Self {
+        Self(path.into())
+    }
+}
+
+impl From<&PathBuf> for FsPath {
+    fn from(path: &PathBuf) -> Self {
+        Self(path.into())
+    }
+}
+
+impl From<PathBuf> for FsPath {
+    fn from(path: PathBuf) -> Self {
+        Self(path)
+    }
+}
+
 impl From<&str> for FsPath {
-    fn from(s: &str) -> Self {
-        Self(s.into())
+    fn from(path: &str) -> Self {
+        Self(path.into())
     }
 }
 
 impl From<&String> for FsPath {
-    fn from(s: &String) -> Self {
-        Self(s.into())
+    fn from(path: &String) -> Self {
+        Self(path.into())
     }
 }
 
 impl From<String> for FsPath {
-    fn from(s: String) -> Self {
-        Self(s)
+    fn from(path: String) -> Self {
+        Self(path.into())
     }
 }
 
-impl AsRef<String> for FsPath {
-    fn as_ref(&self) -> &String {
+impl AsRef<Path> for FsPath {
+    fn as_ref(&self) -> &Path {
         &self.0
     }
 }
 
-impl From<&str> for FsRoot {
-    fn from(s: &str) -> Self {
-        Self(s.into())
+impl TryFrom<&Path> for FsRoot {
+    type Error = SystemError;
+
+    fn try_from(path: &Path) -> Result<Self, Self::Error> {
+        let value = Self::canonicalize(path.into())?;
+        Ok(Self(value))
     }
 }
 
-impl From<&String> for FsRoot {
-    fn from(s: &String) -> Self {
-        Self(s.into())
+impl TryFrom<&PathBuf> for FsRoot {
+    type Error = SystemError;
+
+    fn try_from(path: &PathBuf) -> Result<Self, Self::Error> {
+        let value = Self::canonicalize(path.into())?;
+        Ok(Self(value))
     }
 }
 
-impl From<String> for FsRoot {
-    fn from(s: String) -> Self {
-        Self(s)
+impl TryFrom<PathBuf> for FsRoot {
+    type Error = SystemError;
+
+    fn try_from(path: PathBuf) -> Result<Self, Self::Error> {
+        let value = Self::canonicalize(path)?;
+        Ok(Self(value))
     }
 }
 
-impl AsRef<String> for FsRoot {
-    fn as_ref(&self) -> &String {
+impl TryFrom<&str> for FsRoot {
+    type Error = SystemError;
+
+    fn try_from(path: &str) -> Result<Self, Self::Error> {
+        let value = Self::canonicalize(path.into())?;
+        Ok(Self(value))
+    }
+}
+
+impl TryFrom<&String> for FsRoot {
+    type Error = SystemError;
+
+    fn try_from(path: &String) -> Result<Self, Self::Error> {
+        let value = Self::canonicalize(path.into())?;
+        Ok(Self(value))
+    }
+}
+
+impl TryFrom<String> for FsRoot {
+    type Error = SystemError;
+
+    fn try_from(path: String) -> Result<Self, Self::Error> {
+        let value = Self::canonicalize(path.into())?;
+        Ok(Self(value))
+    }
+}
+
+impl AsRef<Path> for FsRoot {
+    fn as_ref(&self) -> &Path {
         &self.0
     }
 }

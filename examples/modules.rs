@@ -2,6 +2,8 @@
 
 extern crate tera;
 
+use std::convert::TryFrom;
+
 use tera::{
     permissions::{
         fs::{Fs, FsPath, FsRoot},
@@ -19,8 +21,8 @@ async fn main() -> Result<()> {
 
     // Create permissions
     let permissions = Permissions::builder()
-        .add_state(FsRoot::from(env!("CARGO_MANIFEST_DIR")))
-        .add_permissions(&[(Fs::Execute, &allow_list)])?
+        .add_state(FsRoot::try_from(env!("CARGO_MANIFEST_DIR"))?)
+        .add_permissions_with_allow_list(&[(Fs::Execute, &allow_list)])?
         .build();
 
     // Create a new runtime.

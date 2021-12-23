@@ -2,7 +2,7 @@
 //! No support for non-ascii headers yet.
 
 use crate::events::Events;
-use crate::permissions::events::event_http::{HttpEvent, HttpEventPath};
+use crate::permissions::events::event_http::HttpEvent;
 use crate::permissions::Permissions;
 use deno_core::parking_lot::Mutex;
 use deno_core::{error::AnyError, include_js_files, op_async, Extension, OpState};
@@ -205,16 +205,14 @@ fn op_http_get_request_headers(
     let events = events_rc.borrow();
 
     // Get request from event.
-    let (request, path) = match events.http.as_ref() {
-        Some(event) => (&event.request, &event.path),
+    let request = match events.http.as_ref() {
+        Some(event) => &event.request,
         None => return errors::missing_error_t(r#"unsupported event, "HttpEvent""#),
     };
 
     // Check read permission.
     let permissions = Rc::clone(state.borrow::<Rc<RefCell<Permissions>>>());
-    permissions
-        .borrow()
-        .check(HttpEvent::ReadRequest, HttpEventPath::from(path))?;
+    permissions.borrow().check_exists(HttpEvent::ReadRequest)?;
 
     // Populate a hashmap from header key-value pair.
     let mut map = HashMap::new();
@@ -232,16 +230,14 @@ fn op_http_get_request_header(state: &mut OpState, key: String, _: ()) -> Result
     let events = events_rc.borrow();
 
     // Get request from event.
-    let (request, path) = match events.http.as_ref() {
-        Some(event) => (&event.request, &event.path),
+    let request = match events.http.as_ref() {
+        Some(event) => &event.request,
         None => return errors::missing_error_t(r#"unsupported event, "HttpEvent""#),
     };
 
     // Check read permission.
     let permissions = Rc::clone(state.borrow::<Rc<RefCell<Permissions>>>());
-    permissions
-        .borrow()
-        .check(HttpEvent::ReadRequest, HttpEventPath::from(path))?;
+    permissions.borrow().check_exists(HttpEvent::ReadRequest)?;
 
     // Get the value of request header.
     let value = match request.headers().get(&key) {
@@ -261,8 +257,8 @@ fn op_http_set_request_header(
     let mut events = events_rc.borrow_mut();
 
     // Get request from event.
-    let (request, path) = match events.http.as_mut() {
-        Some(event) => (&mut event.request, &event.path),
+    let request = match events.http.as_mut() {
+        Some(event) => &mut event.request,
         None => return errors::missing_error_t(r#"unsupported event, "HttpEvent""#),
     };
 
@@ -270,7 +266,7 @@ fn op_http_set_request_header(
     let permissions = Rc::clone(state.borrow::<Rc<RefCell<Permissions>>>());
     permissions
         .borrow()
-        .check(HttpEvent::ModifyRequest, HttpEventPath::from(path))?;
+        .check_exists(HttpEvent::ModifyRequest)?;
 
     // Set header.
     let optional = request
@@ -289,16 +285,14 @@ fn op_http_get_request_uri_scheme(
     let events = events_rc.borrow();
 
     // Get request from event.
-    let (request, path) = match events.http.as_ref() {
-        Some(event) => (&event.request, &event.path),
+    let request = match events.http.as_ref() {
+        Some(event) => &event.request,
         None => return errors::missing_error_t(r#"unsupported event, "HttpEvent""#),
     };
 
     // Check read permission.
     let permissions = Rc::clone(state.borrow::<Rc<RefCell<Permissions>>>());
-    permissions
-        .borrow()
-        .check(HttpEvent::ReadRequest, HttpEventPath::from(path))?;
+    permissions.borrow().check_exists(HttpEvent::ReadRequest)?;
 
     // Get the value of request scheme.
     let authority = request.uri().scheme();
@@ -315,16 +309,14 @@ fn op_http_get_request_uri_authority(
     let events = events_rc.borrow();
 
     // Get request from event.
-    let (request, path) = match events.http.as_ref() {
-        Some(event) => (&event.request, &event.path),
+    let request = match events.http.as_ref() {
+        Some(event) => &event.request,
         None => return errors::missing_error_t(r#"unsupported event, "HttpEvent""#),
     };
 
     // Check read permission.
     let permissions = Rc::clone(state.borrow::<Rc<RefCell<Permissions>>>());
-    permissions
-        .borrow()
-        .check(HttpEvent::ReadRequest, HttpEventPath::from(path))?;
+    permissions.borrow().check_exists(HttpEvent::ReadRequest)?;
 
     // Get the value of request authority.
     let authority = request.uri().authority();
@@ -341,16 +333,14 @@ fn op_http_get_request_uri_query(
     let events = events_rc.borrow();
 
     // Get request from event.
-    let (request, path) = match events.http.as_ref() {
-        Some(event) => (&event.request, &event.path),
+    let request = match events.http.as_ref() {
+        Some(event) => &event.request,
         None => return errors::missing_error_t(r#"unsupported event, "HttpEvent""#),
     };
 
     // Check read permission.
     let permissions = Rc::clone(state.borrow::<Rc<RefCell<Permissions>>>());
-    permissions
-        .borrow()
-        .check(HttpEvent::ReadRequest, HttpEventPath::from(path))?;
+    permissions.borrow().check_exists(HttpEvent::ReadRequest)?;
 
     // Get the value of request query.
     let query = request.uri().query();
@@ -363,16 +353,14 @@ fn op_http_get_request_uri_path(state: &mut OpState, _: (), _: ()) -> Result<Str
     let events = events_rc.borrow();
 
     // Get request from event.
-    let (request, path) = match events.http.as_ref() {
-        Some(event) => (&event.request, &event.path),
+    let request = match events.http.as_ref() {
+        Some(event) => &event.request,
         None => return errors::missing_error_t(r#"unsupported event, "HttpEvent""#),
     };
 
     // Check read permission.
     let permissions = Rc::clone(state.borrow::<Rc<RefCell<Permissions>>>());
-    permissions
-        .borrow()
-        .check(HttpEvent::ReadRequest, HttpEventPath::from(path))?;
+    permissions.borrow().check_exists(HttpEvent::ReadRequest)?;
 
     // Get the value of request path.
     let uri_path = request.uri().path();
@@ -389,16 +377,14 @@ fn op_http_get_request_uri_path_query(
     let events = events_rc.borrow();
 
     // Get request from event.
-    let (request, path) = match events.http.as_ref() {
-        Some(event) => (&event.request, &event.path),
+    let request = match events.http.as_ref() {
+        Some(event) => &event.request,
         None => return errors::missing_error_t(r#"unsupported event, "HttpEvent""#),
     };
 
     // Check read permission.
     let permissions = Rc::clone(state.borrow::<Rc<RefCell<Permissions>>>());
-    permissions
-        .borrow()
-        .check(HttpEvent::ReadRequest, HttpEventPath::from(path))?;
+    permissions.borrow().check_exists(HttpEvent::ReadRequest)?;
 
     // Get the value of request path and query.
     let query = request.uri().path_and_query();
@@ -415,16 +401,14 @@ fn op_http_get_request_uri_host(
     let events = events_rc.borrow();
 
     // Get request from event.
-    let (request, path) = match events.http.as_ref() {
-        Some(event) => (&event.request, &event.path),
+    let request = match events.http.as_ref() {
+        Some(event) => &event.request,
         None => return errors::missing_error_t(r#"unsupported event, "HttpEvent""#),
     };
 
     // Check read permission.
     let permissions = Rc::clone(state.borrow::<Rc<RefCell<Permissions>>>());
-    permissions
-        .borrow()
-        .check(HttpEvent::ReadRequest, HttpEventPath::from(path))?;
+    permissions.borrow().check_exists(HttpEvent::ReadRequest)?;
 
     // Get the value of request host.
     let query = request.uri().host();
@@ -441,16 +425,14 @@ fn op_http_get_request_uri_port(
     let events = events_rc.borrow();
 
     // Get request from event.
-    let (request, path) = match events.http.as_ref() {
-        Some(event) => (&event.request, &event.path),
+    let request = match events.http.as_ref() {
+        Some(event) => &event.request,
         None => return errors::missing_error_t(r#"unsupported event, "HttpEvent""#),
     };
 
     // Check read permission.
     let permissions = Rc::clone(state.borrow::<Rc<RefCell<Permissions>>>());
-    permissions
-        .borrow()
-        .check(HttpEvent::ReadRequest, HttpEventPath::from(path))?;
+    permissions.borrow().check_exists(HttpEvent::ReadRequest)?;
 
     // Get the value of request port.
     Ok(request.uri().port_u16())
@@ -461,16 +443,14 @@ fn op_http_get_request_method(state: &mut OpState, _: (), _: ()) -> Result<Strin
     let events = events_rc.borrow();
 
     // Get request from event.
-    let (request, path) = match events.http.as_ref() {
-        Some(event) => (&event.request, &event.path),
+    let request = match events.http.as_ref() {
+        Some(event) => &event.request,
         None => return errors::missing_error_t(r#"unsupported event, "HttpEvent""#),
     };
 
     // Check read permission.
     let permissions = Rc::clone(state.borrow::<Rc<RefCell<Permissions>>>());
-    permissions
-        .borrow()
-        .check(HttpEvent::ReadRequest, HttpEventPath::from(path))?;
+    permissions.borrow().check_exists(HttpEvent::ReadRequest)?;
 
     // Get the value of request method.
     let method = request.method().to_string();
@@ -483,16 +463,14 @@ fn op_http_get_request_version(state: &mut OpState, _: (), _: ()) -> Result<Stri
     let events = events_rc.borrow();
 
     // Get request from event.
-    let (request, path) = match events.http.as_ref() {
-        Some(event) => (&event.request, &event.path),
+    let request = match events.http.as_ref() {
+        Some(event) => &event.request,
         None => return errors::missing_error_t(r#"unsupported event, "HttpEvent""#),
     };
 
     // Check read permission.
     let permissions = Rc::clone(state.borrow::<Rc<RefCell<Permissions>>>());
-    permissions
-        .borrow()
-        .check(HttpEvent::ReadRequest, HttpEventPath::from(path))?;
+    permissions.borrow().check_exists(HttpEvent::ReadRequest)?;
 
     // Get the value of request method.
     let version = format!("{:?}", request.version());
@@ -505,16 +483,14 @@ fn op_http_get_request_body_size_hint(state: &mut OpState, _: (), _: ()) -> Resu
     let events = events_rc.borrow();
 
     // Get request from event.
-    let (request, path) = match events.http.as_ref() {
-        Some(event) => (&event.request, &event.path),
+    let request = match events.http.as_ref() {
+        Some(event) => &event.request,
         None => return errors::missing_error_t(r#"unsupported event, "HttpEvent""#),
     };
 
     // Check read permission.
     let permissions = Rc::clone(state.borrow::<Rc<RefCell<Permissions>>>());
-    permissions
-        .borrow()
-        .check(HttpEvent::ReadRequest, HttpEventPath::from(path))?;
+    permissions.borrow().check_exists(HttpEvent::ReadRequest)?;
 
     // Get the value of request body size.
     let size = HttpBody::size_hint(request.body())
@@ -533,16 +509,14 @@ fn op_http_get_request_body_read_stream(
     let mut events = events_rc.borrow_mut();
 
     // Get request from event.
-    let (request, path) = match events.http.as_mut() {
-        Some(event) => (&mut event.request, &event.path),
+    let request = match events.http.as_mut() {
+        Some(event) => &mut event.request,
         None => return errors::missing_error_t(r#"unsupported event, "HttpEvent""#),
     };
 
     // Check read permission.
     let permissions = Rc::clone(state.borrow::<Rc<RefCell<Permissions>>>());
-    permissions
-        .borrow()
-        .check(HttpEvent::ReadRequest, HttpEventPath::from(path))?;
+    permissions.borrow().check_exists(HttpEvent::ReadRequest)?;
 
     // Take ownership of body.
     let body = mem::take(request.body_mut());
@@ -562,20 +536,9 @@ async fn op_http_read_request_body_chunk(
     rid: ResourceId,
     mut buf: ZeroCopyBuf,
 ) -> Result<usize, AnyError> {
-    let events_rc = Rc::clone(state.borrow().borrow::<Rc<RefCell<Events>>>());
-    let events = events_rc.borrow_mut();
-
-    // Get request from event.
-    let path = match events.http.as_ref() {
-        Some(event) => &event.path,
-        None => return errors::missing_error_t(r#"unsupported event, "HttpEvent""#),
-    };
-
     // Check read permission.
     let permissions = Rc::clone(state.borrow().borrow::<Rc<RefCell<Permissions>>>());
-    permissions
-        .borrow()
-        .check(HttpEvent::ReadRequest, HttpEventPath::from(path))?;
+    permissions.borrow().check_exists(HttpEvent::ReadRequest)?;
 
     // Get the next buffer from body.
     let reader = state
@@ -597,8 +560,8 @@ fn op_http_set_response_parts(
     let mut events = events_rc.borrow_mut();
 
     // Get objects from http.event.
-    let (response, path) = match events.http.as_mut() {
-        Some(event) => (&mut event.response, &event.path),
+    let response = match events.http.as_mut() {
+        Some(event) => &mut event.response,
         None => return errors::missing_error_t(r#"unsupported event, "HttpEvent""#),
     };
 
@@ -606,7 +569,7 @@ fn op_http_set_response_parts(
     let permissions = Rc::clone(state.borrow::<Rc<RefCell<Permissions>>>());
     permissions
         .borrow()
-        .check(HttpEvent::WriteResponse, HttpEventPath::from(path))?;
+        .check_exists(HttpEvent::WriteResponse)?;
 
     // Set headers.
     let mut map = HeaderMap::new();
@@ -645,11 +608,10 @@ async fn op_http_set_send_response_body(
     let mut events = events_rc.borrow_mut();
 
     // Get objects from http.event.
-    let (mut response, responder, path) = match events.http.as_mut() {
+    let (mut response, responder) = match events.http.as_mut() {
         Some(event) => (
             mem::take(&mut event.response), // Take ownership of response.
             &mut event.responder,
-            &event.path,
         ),
         None => return errors::missing_error_t(r#"unsupported event, "HttpEvent""#),
     };
@@ -658,7 +620,7 @@ async fn op_http_set_send_response_body(
     let permissions = Rc::clone(state.borrow().borrow::<Rc<RefCell<Permissions>>>());
     permissions
         .borrow()
-        .check(HttpEvent::WriteResponse, HttpEventPath::from(path))?;
+        .check_exists(HttpEvent::WriteResponse)?;
 
     // Write to body if buffer is not empty.
     if buf.len() > 0 {
@@ -682,20 +644,17 @@ async fn op_http_set_send_response_body_write_stream(
     let mut events = events_rc.borrow_mut();
 
     // Get request from event.
-    let (mut response, responder, path) = match events.http.as_mut() {
+    let (mut response, responder) = match events.http.as_mut() {
         Some(event) => (
             mem::take(&mut event.response), // Take ownership of response.
             &mut event.responder,
-            &event.path,
         ),
         None => return errors::missing_error_t(r#"unsupported event, "HttpEvent""#),
     };
 
     // Check read permission.
     let permissions = Rc::clone(state.borrow().borrow::<Rc<RefCell<Permissions>>>());
-    permissions
-        .borrow()
-        .check(HttpEvent::SendResponse, HttpEventPath::from(path))?;
+    permissions.borrow().check_exists(HttpEvent::SendResponse)?;
 
     // Create queue.
     let shared_queue = Arc::new(Mutex::new(BufferQueue::new()));
@@ -723,20 +682,9 @@ async fn op_http_write_response_body_chunk(
     rid: ResourceId,
     buf: ZeroCopyBuf,
 ) -> Result<(), AnyError> {
-    let events_rc = Rc::clone(state.borrow().borrow::<Rc<RefCell<Events>>>());
-    let events = events_rc.borrow_mut();
-
-    // Get request from event.
-    let path = match events.http.as_ref() {
-        Some(event) => &event.path,
-        None => return errors::missing_error_t(r#"unsupported event, "HttpEvent""#),
-    };
-
     // Check read permission.
     let permissions = Rc::clone(state.borrow().borrow::<Rc<RefCell<Permissions>>>());
-    permissions
-        .borrow()
-        .check(HttpEvent::ReadRequest, HttpEventPath::from(path))?;
+    permissions.borrow().check_exists(HttpEvent::ReadRequest)?;
 
     // Get buffer queue.
     let resource = state

@@ -8,7 +8,7 @@ use futures_util::{StreamExt, TryStreamExt};
 use tera::{
     events::{Events, HttpEvent, HttpResponder},
     permissions::{
-        events::event_http::{self, HttpEventPath},
+        events::event_http::{self},
         Permissions,
     },
     Runtime,
@@ -21,12 +21,9 @@ use utilities::{
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Create permitted resources
-    let allow_list = [HttpEventPath::from("/")];
-
     // Create permissions
     let permissions = Permissions::builder()
-        .add_permissions(&[(event_http::HttpEvent::SendResponse, &allow_list)])?
+        .add_permissions(&[event_http::HttpEvent::SendResponse])?
         .build();
 
     // Create channels.
@@ -56,7 +53,7 @@ async fn main() -> Result<()> {
     let events = create_http_events(Rc::new(response_tx))?;
 
     // Create a new runtime.
-    let mut runtime = Runtime::with_events(permissions, events, false,Default::default()).await?;
+    let mut runtime = Runtime::with_events(permissions, events, false, Default::default()).await?;
 
     // Read main module code.
     let main_module_filename = "./examples/js/event_http.js";
