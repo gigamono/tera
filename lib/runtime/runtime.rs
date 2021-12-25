@@ -189,10 +189,8 @@ impl Runtime {
     fn execute_postscripts(runtime: &mut JsRuntime) -> Result<()> {
         // TODO(appcypher): Need to make it possible for users to skip Tera's postscripts and add their own.
         // Get postcripts directory.
-        let postscripts_dir = &PathBuf::from(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/lib/runtime/postscripts"
-        ));
+        let postscripts_dir =
+            &PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/lib/postscripts"));
 
         // Blindly assume everything in directory is a postscript.
         let mut postscripts = fs::read_dir(postscripts_dir)
