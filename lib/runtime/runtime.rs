@@ -212,7 +212,7 @@ impl Runtime {
 
             // Execute postscript.
             runtime
-                .execute_script(&format!("(tera:postscripts) {}", &path.display()), &content)
+                .execute_script(&format!("(tera:postscripts) {}", path.display()), &content)
                 .context("executing postscript file")?;
         }
 

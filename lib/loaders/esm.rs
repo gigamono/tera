@@ -1,12 +1,13 @@
 // Copyright 2021 the Gigamono authors. All rights reserved. Apache 2.0 license.
 
-use std::{cell::RefCell, fs, pin::Pin, rc::Rc};
+use log::debug;
+use std::{cell::RefCell, fs, path::PathBuf, pin::Pin, rc::Rc};
 use utilities::{errors, result::Context};
 
 use deno_core::{futures::FutureExt, ModuleLoader, ModuleSource};
 
 use crate::permissions::{
-    fs::{Fs, FsPath},
+    fs::{Fs, FsPath, FsRoot},
     Permissions,
 };
 
@@ -41,7 +42,7 @@ impl ModuleLoader for ESMLoader {
         _is_dyn_import: bool,
     ) -> Pin<Box<deno_core::ModuleSourceFuture>> {
         let module_specifier = module_specifier.clone();
-        let permissions = self.permissions.clone();
+        let permissions_rc = self.permissions.clone();
 
         async move {
             // We only support "file" scheme for now.
@@ -59,14 +60,30 @@ impl ModuleLoader for ESMLoader {
                 .strip_prefix("file://")
                 .context("getting path from specifier")?;
 
-            // Check permissions.
-            permissions
-                .borrow()
-                .check(Fs::Execute, FsPath::from(module_path))?;
+            debug!("Module relative path = {}", module_path);
 
-            // Fetch module source.
-            let code = fs::read_to_string(module_path)
-                .context(format!(r#"reading module code from "{}""#, module_path))?;
+            let code = {
+                let permissions = permissions_rc.borrow();
+
+                // Check permissions.
+                permissions.check(Fs::Execute, FsPath::from(module_path))?;
+
+                // Get root path from permissions.
+                let root = if let Some(state) = &permissions.state {
+                    state.downcast_ref::<FsRoot>().unwrap().as_ref()
+                } else {
+                    return errors::permission_error_t("root path not specified");
+                };
+
+                // The full path.
+                let full_path = Fs::clean_path(&PathBuf::from(module_path), root)?;
+
+                debug!("Module full path = {}", full_path.display());
+
+                // Fetch module source.
+                fs::read_to_string(full_path)
+                    .context(format!(r#"reading module code from "{}""#, module_path))?
+            };
 
             let mod_src = ModuleSource {
                 code,
