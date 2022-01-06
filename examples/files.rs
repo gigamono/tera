@@ -16,7 +16,7 @@ use utilities::result::Result;
 #[tokio::main]
 async fn main() -> Result<()> {
     // Create permitted resources
-    let allow_list = [FsPath::from("examples/txt/**")];
+    let allow_list = [FsPath::from("/examples/txt/**")];
 
     // Create permissions
     let permissions = Permissions::builder()
@@ -34,15 +34,15 @@ async fn main() -> Result<()> {
     // Execute main module.
     runtime
         .execute_module(
-            "examples/js/read_text_file.js",
+            "/examples/js/read_text_file.js",
             r#"
             const { File, log, decode, encode } = Tera;
 
-            const readFile = await File.open("examples/txt/lorem.txt", { read: true });
+            const readFile = await File.open("/examples/txt/lorem.txt", { read: true });
             const readBuf = await readFile.readAll();
             log.info(">> file content =", decode(readBuf));
 
-            const writeFile = await File.open("examples/txt/write.txt", { write: true });
+            const writeFile = await File.open("/examples/txt/write.txt", { write: true });
             const writeString = `This is a random value written to a file: ${Math.random()}\n`;
             log.info(">> write string =", writeString);
             await writeFile.writeAll(encode(writeString));

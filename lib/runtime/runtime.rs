@@ -11,7 +11,7 @@ use log::{debug, info};
 use regex::Regex;
 use std::fs;
 use std::{cell::RefCell, path::PathBuf, rc::Rc};
-use utilities::result::{Context, Result};
+use utilities::{result::{Context, Result}, errors};
 
 pub struct Runtime {
     runtime: JsRuntime,
@@ -119,17 +119,26 @@ impl Runtime {
 
     pub async fn execute_module(
         &mut self,
-        filename: impl AsRef<str>,
+        abs_path_str: impl AsRef<str>,
         module_code: impl Into<String>,
     ) -> Result<()> {
-        let filename = filename.as_ref();
+        let abs_path_str = abs_path_str.as_ref();
+
+        // Deno does not handle relative path referer well.
+        if !PathBuf::from(abs_path_str).starts_with(std::path::MAIN_SEPARATOR.to_string()) {
+            return errors::new_error_t(format!(
+                r#"expected main module path to be an absolute path starting with a path separator, {:?}"#,
+                abs_path_str
+            ));
+        }
+
         let module_code = module_code.into();
 
         // Add file scheme to filename and resolve to URL.
         let module_specifier =
-            deno_core::resolve_url(&format!("file://{}", filename)).context(format!(
+            deno_core::resolve_url(&format!("file://{}", abs_path_str)).context(format!(
                 r#"resolving main module specifier as "file://{}""#,
-                filename
+                abs_path_str
             ))?;
 
         // Load main module and deps.

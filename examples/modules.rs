@@ -17,7 +17,7 @@ use utilities::result::Result;
 #[tokio::main]
 async fn main() -> Result<()> {
     // Create permitted resources
-    let allow_list = [FsPath::from("examples/js/**")];
+    let allow_list = [FsPath::from("/examples/js/**")];
 
     // Create permissions
     let permissions = Permissions::builder()
@@ -29,11 +29,10 @@ async fn main() -> Result<()> {
     let mut runtime = Runtime::with_permissions(permissions, false, Default::default()).await?;
 
     // Get main module code.
-    let main_module_filename = "./examples/js/modules.js";
-    let main_module_code = fs::read_to_string(main_module_filename).await?;
+    let main_module_code = fs::read_to_string("examples/js/modules.js").await?;
 
     // Execute main module.
     runtime
-        .execute_module(main_module_filename, main_module_code)
+        .execute_module("/examples/js/modules.js", main_module_code)
         .await
 }

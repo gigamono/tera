@@ -61,10 +61,16 @@ impl Resource for FileResource {}
 
 async fn op_fs_open(
     state: Rc<RefCell<OpState>>,
-    path: String,
+    abs_path_str: String,
     options: FileOptions,
 ) -> Result<ResourceId, AnyError> {
-    let path = &path;
+    let abs_path = &PathBuf::from(&abs_path_str);
+    if !abs_path.starts_with(std::path::MAIN_SEPARATOR.to_string()) {
+        return errors::new_error_t(format!(
+            r#"expected specified path to be an absolute path starting with a path separator, {:?}"#,
+            abs_path
+        ));
+    }
 
     let clean_full_path = {
         // We use OS-supported permissions for files. Permissions are added on file open/creation.
@@ -73,20 +79,20 @@ async fn op_fs_open(
 
         // Check create permission.
         if options.create {
-            permissions.check(Fs::Create, FsPath::from(path))?;
+            permissions.check(Fs::Create, FsPath::from(abs_path))?;
         } else {
             // Check open permission.
-            permissions.check(Fs::Open, FsPath::from(path))?;
+            permissions.check(Fs::Open, FsPath::from(abs_path))?;
         }
 
         // Check read permission.
         if options.read {
-            permissions.check(Fs::Read, FsPath::from(path))?;
+            permissions.check(Fs::Read, FsPath::from(abs_path))?;
         }
 
         // Check write permission.
         if options.write {
-            permissions.check(Fs::Write, FsPath::from(path))?;
+            permissions.check(Fs::Write, FsPath::from(abs_path))?;
         }
 
         // Get root path from permissions.
@@ -97,7 +103,7 @@ async fn op_fs_open(
         };
 
         // The full path.
-        &Fs::clean_path(&PathBuf::from(path), root)?
+        &Fs::clean_path(root, &PathBuf::from(abs_path))?
     };
 
     // Open file with options specified.
@@ -113,7 +119,7 @@ async fn op_fs_open(
     // Save file info for later.
     let rid = state.borrow_mut().resource_table.add(FileResource {
         file: AsyncRefCell::new(file),
-        path: path.into(),
+        path: abs_path_str,
         options,
     });
 

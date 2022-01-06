@@ -8,7 +8,7 @@ use std::{
     any::TypeId,
     convert::TryFrom,
     fs,
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
     rc::Rc,
 };
 use utilities::{
@@ -48,18 +48,35 @@ impl Fs {
     ///
     /// Resolves `..`, `.` and removing excess separator in the absolute path.
     ///
-    /// Expects a relative `path` and does not support paths starting with `../`.
-    pub fn clean_path(path: &Path, root: &Path) -> Result<PathBuf> {
-        // SEC: Paths starting with "../"  are not supported.
+    /// Expects a `path` that can be cleaned properly.
+    pub fn clean_path(root: &Path, path: &Path) -> Result<PathBuf> {
+        // NOTE: Need to make an absolute path non-absolute for join to work as expected.
+        let relative_path = {
+            // Remove possible multiple separators.
+            let path = PathBuf::from(path).clean();
+
+            // Remove preceding separator.
+            path.strip_prefix(std::path::MAIN_SEPARATOR.to_string())
+                .unwrap_or(&path)
+                .to_owned()
+        };
+
+        // Join paths.
+        let full_path: PathBuf = [root, &relative_path].iter().collect();
+
+        // Clean full path.
+        let clean_path = full_path.clean();
+
+        // SEC: Paths still containing parent components after cleaning ".."  are not supported.
         // https://fuchsia.googlesource.com/docs/+/d4f9b980f18fc6722b06abb693240b29abbbc9fc/dotdot.md
-        if path.starts_with(PathBuf::from("..")) {
+        if clean_path
+            .components()
+            .any(|component| component == Component::ParentDir)
+        {
             return errors::new_error_t(format!(r#"no support for ".." paths, {:?}"#, path));
         }
 
-        // Join paths.
-        let full_path: PathBuf = [root, path].iter().collect();
-
-        Ok(full_path.clean())
+        return Ok(clean_path);
     }
 }
 
@@ -96,9 +113,15 @@ impl PermissionType for Fs {
                     return errors::permission_error_t("root path not specified");
                 };
 
-                let path = dir.downcast_ref::<FsPath>().unwrap().as_ref();
+                let abs_path = dir.downcast_ref::<FsPath>().unwrap().as_ref();
+                if !abs_path.starts_with(std::path::MAIN_SEPARATOR.to_string()) {
+                    return errors::new_error_t(format!(
+                        r#"expected allow list path to be an absolute path starting with a path separator, {:?}"#,
+                        abs_path
+                    ));
+                }
 
-                let clean_full_dir = Self::clean_path(path, root)?;
+                let clean_full_dir = Self::clean_path(root, abs_path)?;
 
                 debug!("Allowed path = {:?}", clean_full_dir);
 
@@ -136,7 +159,7 @@ impl PermissionType for Fs {
 
     fn check(
         &self,
-        path: &Box<dyn Resource>,
+        abs_path: &Box<dyn Resource>,
         allow_list: Rc<Vec<Box<dyn Resource>>>,
         state: &Option<Box<dyn State>>,
     ) -> Result<()> {
@@ -148,10 +171,16 @@ impl PermissionType for Fs {
         };
 
         // Downcast path to FsPath.
-        let path = path.downcast_ref::<FsPath>().unwrap().as_ref();
+        let abs_path = abs_path.downcast_ref::<FsPath>().unwrap().as_ref();
+        if !abs_path.starts_with(std::path::MAIN_SEPARATOR.to_string()) {
+            return errors::new_error_t(format!(
+                r#"expected resource path to be an absolute path starting with a path separator, {:?}"#,
+                abs_path
+            ));
+        }
 
         // Clean path.
-        let path = &Self::clean_path(&path, &root)?;
+        let clean_path = &Self::clean_path(&root, &abs_path)?;
 
         // Check for any allowed dir that matches pattern.
         for allowed_dir in allow_list.iter() {
@@ -159,9 +188,13 @@ impl PermissionType for Fs {
             let fs_path = allowed_dir.downcast_ref::<FsPath>().unwrap();
 
             // SEC: Convert path to UTF-8 string.
-            let path_string = path.as_os_str().to_owned().into_string().map_err(|e| {
-                errors::new_error(format!("converting path name to utf-8 string {:?}", e))
-            })?;
+            let path_string = clean_path
+                .as_os_str()
+                .to_owned()
+                .into_string()
+                .map_err(|e| {
+                    errors::new_error(format!("converting path name to utf-8 string {:?}", e))
+                })?;
 
             if fs_path.regex.as_ref().unwrap().is_match(&path_string) {
                 return Ok(());
@@ -171,7 +204,7 @@ impl PermissionType for Fs {
         errors::permission_error_t(format!(
             r#"permission type "{}" does not exist for file {:?}"#,
             self.get_type(),
-            path
+            clean_path
         ))
     }
 }

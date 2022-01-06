@@ -56,7 +56,6 @@ async fn main() -> Result<()> {
     let mut runtime = Runtime::with_events(permissions, events, false, Default::default()).await?;
 
     // Read main module code.
-    let main_module_filename = "./examples/js/event_http.js";
     let main_module_code = r#"
     const { log, decode, encode, events: { http }, Response } = Tera;
 
@@ -96,7 +95,7 @@ async fn main() -> Result<()> {
 
     // Execute main module.
     runtime
-        .execute_module(main_module_filename, main_module_code)
+        .execute_module("/examples/js/event_http.js", main_module_code)
         .await
 }
 
