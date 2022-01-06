@@ -58,7 +58,7 @@ async fn main() -> Result<()> {
     // Read main module code.
     let main_module_filename = "./examples/js/event_http.js";
     let main_module_code = r#"
-    const { http } = events;
+    const { log, decode, encode, events: { http }, Response } = Tera;
 
     // Read body.
     const buf = await http.request.body.readAll();

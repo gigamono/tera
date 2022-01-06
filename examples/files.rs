@@ -16,7 +16,7 @@ use utilities::result::Result;
 #[tokio::main]
 async fn main() -> Result<()> {
     // Create permitted resources
-    let allow_list = [FsPath::from("examples/txt")];
+    let allow_list = [FsPath::from("examples/txt/**")];
 
     // Create permissions
     let permissions = Permissions::builder()
@@ -36,6 +36,8 @@ async fn main() -> Result<()> {
         .execute_module(
             "examples/js/read_text_file.js",
             r#"
+            const { File, log, decode, encode } = Tera;
+
             const readFile = await File.open("examples/txt/lorem.txt", { read: true });
             const readBuf = await readFile.readAll();
             log.info(">> file content =", decode(readBuf));

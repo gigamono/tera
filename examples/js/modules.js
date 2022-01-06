@@ -2,6 +2,8 @@
 
 import { Rectangle } from "./shapes.js";
 
+const { log } = Tera;
+
 let rect = new Rectangle(5, 40);
 
 log.info("area =", rect.area());

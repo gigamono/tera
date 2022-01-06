@@ -17,7 +17,7 @@ use utilities::result::Result;
 #[tokio::main]
 async fn main() -> Result<()> {
     // Create permitted resources
-    let allow_list = [FsPath::from("examples/js")];
+    let allow_list = [FsPath::from("examples/js/**")];
 
     // Create permissions
     let permissions = Permissions::builder()
