@@ -11,7 +11,10 @@ use log::{debug, info};
 use regex::Regex;
 use std::fs;
 use std::{cell::RefCell, path::PathBuf, rc::Rc};
-use utilities::{result::{Context, Result}, errors};
+use utilities::{
+    errors,
+    result::{Context, Result},
+};
 
 pub struct Runtime {
     runtime: JsRuntime,
@@ -135,8 +138,8 @@ impl Runtime {
         let module_code = module_code.into();
 
         // Add file scheme to filename and resolve to URL.
-        let module_specifier =
-            deno_core::resolve_url(&format!("file://{}", abs_path_str)).context(format!(
+        let module_specifier = deno_core::resolve_url(&format!("file://{}", abs_path_str))
+            .context(format!(
                 r#"resolving main module specifier as "file://{}""#,
                 abs_path_str
             ))?;
@@ -221,7 +224,7 @@ impl Runtime {
 
             // Execute postscript.
             runtime
-                .execute_script(&format!("(tera:postscripts) {}", path.display()), &content)
+                .execute_script(&format!("(tera:postscripts) {:?}", path), &content)
                 .context("executing postscript file")?;
         }
 

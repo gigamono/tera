@@ -78,7 +78,7 @@ impl ModuleLoader for ESMLoader {
                 // The full path.
                 let full_path = Fs::clean_path(root, &PathBuf::from(module_path))?;
 
-                debug!("Module full path = {}", full_path.display());
+                debug!("Module full path = {:?}", full_path);
 
                 // Fetch module source.
                 fs::read_to_string(full_path)

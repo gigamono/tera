@@ -113,14 +113,28 @@ impl PermissionType for Fs {
                     return errors::permission_error_t("root path not specified");
                 };
 
+                // Ensuring path starts with a separator.
                 let abs_path = dir.downcast_ref::<FsPath>().unwrap().as_ref();
                 if !abs_path.starts_with(std::path::MAIN_SEPARATOR.to_string()) {
                     return errors::new_error_t(format!(
-                        r#"expected allow list path to be an absolute path starting with a path separator, {:?}"#,
+                        r#"expected "allow" path to be an absolute path starting with a path separator, {:?}"#,
                         abs_path
                     ));
                 }
 
+                // SEC: abs_path must not contain parent dir component as it can allow user escape root.
+                // https://fuchsia.googlesource.com/docs/+/d4f9b980f18fc6722b06abb693240b29abbbc9fc/dotdot.md
+                if abs_path
+                    .components()
+                    .any(|component| component == Component::ParentDir)
+                {
+                    return errors::new_error_t(format!(
+                        r#"parent dir component ("..") not allowed in "allow" path, {:?}"#,
+                        abs_path
+                    ));
+                }
+
+                // Clean path.
                 let clean_full_dir = Self::clean_path(root, abs_path)?;
 
                 debug!("Allowed path = {:?}", clean_full_dir);

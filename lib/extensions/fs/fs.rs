@@ -80,18 +80,18 @@ async fn op_fs_open(
         // Check create permission.
         if options.create {
             permissions.check(Fs::Create, FsPath::from(abs_path))?;
-        } else {
-            // Check open permission.
-            permissions.check(Fs::Open, FsPath::from(abs_path))?;
         }
+
+        // Check open permission.
+        permissions.check(Fs::Open, FsPath::from(abs_path))?;
 
         // Check read permission.
         if options.read {
             permissions.check(Fs::Read, FsPath::from(abs_path))?;
         }
 
-        // Check write permission.
-        if options.write {
+        // Check write permission for write, append, and truncate.
+        if options.write || options.truncate || options.append {
             permissions.check(Fs::Write, FsPath::from(abs_path))?;
         }
 

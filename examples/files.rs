@@ -2,7 +2,7 @@
 
 extern crate tera;
 
-use std::convert::TryFrom;
+use std::{convert::TryFrom, fs};
 
 use tera::{
     permissions::{
@@ -31,22 +31,11 @@ async fn main() -> Result<()> {
     // Create a new runtime.
     let mut runtime = Runtime::with_permissions(permissions, false, Default::default()).await?;
 
+    // Get the code.
+    let code = fs::read_to_string("examples/js/files.js")?;
+
+    fs::write("test.txt", "contents")?;
+
     // Execute main module.
-    runtime
-        .execute_module(
-            "/examples/js/read_text_file.js",
-            r#"
-            const { File, log, decode, encode } = Tera;
-
-            const readFile = await File.open("/examples/txt/lorem.txt", { read: true });
-            const readBuf = await readFile.readAll();
-            log.info(">> file content =", decode(readBuf));
-
-            const writeFile = await File.open("/examples/txt/write.txt", { write: true });
-            const writeString = `This is a random value written to a file: ${Math.random()}\n`;
-            log.info(">> write string =", writeString);
-            await writeFile.writeAll(encode(writeString));
-          "#,
-        )
-        .await
+    runtime.execute_module("/examples/js/files.js", code).await
 }

@@ -1,2 +1,0 @@
-This is a random value written to a file: 0.10215403854262206
-13

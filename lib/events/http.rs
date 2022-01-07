@@ -10,16 +10,13 @@ use utilities::result::Result;
 use super::EventResponder;
 
 pub struct HttpEvent {
-    pub request: Request<Body>,             // The working request.
-    pub response: Response<Body>,           // The working response.
-    pub responder: Rc<dyn EventResponder>,  // The response sender implementation
+    pub request: Request<Body>,            // The working request.
+    pub response: Response<Body>,          // The working response.
+    pub responder: Rc<dyn EventResponder>, // The response sender implementation
 }
 
 impl HttpEvent {
-    pub fn new(
-        request: Request<Body>,
-        responder: Rc<dyn EventResponder>,
-    ) -> Self {
+    pub fn new(request: Request<Body>, responder: Rc<dyn EventResponder>) -> Self {
         Self {
             request,
             response: Response::default(),
