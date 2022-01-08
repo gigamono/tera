@@ -225,7 +225,7 @@ fn op_http_get_request_headers(
     Ok(map)
 }
 
-fn op_http_get_request_header(state: &mut OpState, key: String, _: ()) -> Result<String, AnyError> {
+fn op_http_get_request_header(state: &mut OpState, key: String, _: ()) -> Result<Option<String>, AnyError> {
     let events_rc = Rc::clone(state.borrow::<Rc<RefCell<Events>>>());
     let events = events_rc.borrow();
 
@@ -241,8 +241,8 @@ fn op_http_get_request_header(state: &mut OpState, key: String, _: ()) -> Result
 
     // Get the value of request header.
     let value = match request.headers().get(&key) {
-        Some(value) => value.to_str()?.to_owned(),
-        None => return errors::missing_error_t(format!(r#"missing header, "{:?}""#, key)),
+        Some(value) => Some(value.to_str()?.to_owned()),
+        None => None,
     };
 
     Ok(value)
