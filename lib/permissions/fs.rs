@@ -218,7 +218,7 @@ impl PermissionType for Fs {
         errors::permission_error_t(format!(
             r#"permission type "{}" does not exist for file {:?}"#,
             self.get_type(),
-            clean_path
+            abs_path
         ))
     }
 }
