@@ -30,38 +30,38 @@ There is plan to support WebAssembly in the future.
 
 You need to add [tokio](https://crates.io/crates/tokio) to your dependencies.
 
-:warning: The current API is subject to change.
+<div align="center">
+    :warning: The current API is subject to change. :warning:
+</div>
 
 ```rs
 #[tokio::main]
 async fn main() -> Result<()> {
     // Create permitted resources
-    let allow_list = [Path::from(concat!(env!("CARGO_MANIFEST_DIR"), "/", "examples/txt"))];
+    let allow_list = [FsPath::from("/examples/txt/**")];
 
     // Create permissions
     let permissions = Permissions::builder()
-        .add_state(Root::from(env!("CARGO_MANIFEST_DIR"))) // Root folder for files to be accessed.
-        .add_permissions(&[
+        .add_state(FsRoot::try_from(env!("CARGO_MANIFEST_DIR"))?)
+        .add_permissions_with_allow_lists(&[
             (Fs::Open, &allow_list),
             (Fs::Read, &allow_list),
+            (Fs::Write, &allow_list),
         ])?
         .build();
 
     // Create a new runtime.
-    let mut runtime = Runtime::default_main(permissions).await?;
+    let mut runtime = Runtime::with_permissions(permissions, false, Default::default()).await?;
+
+    // Get the code.
+    let code = fs::read_to_string("examples/js/files.js")?;
+
+    fs::write("test.txt", "contents")?;
 
     // Execute main module.
-    runtime
-        .execute_module(
-            "examples/read_text_file.js",
-            r#"
-            const readFile = await File.open("examples/txt/lorem.txt", { read: true });
-            const readBuf = await readFile.readAll();
-            log.info(">> file content =", decode(readBuf));
-          "#,
-        )
-        .await
+    runtime.execute_module("/examples/js/files.js", code).await
 }
+
 ```
 
 Check the [examples folder](./examples) for more examples.
