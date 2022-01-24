@@ -31,14 +31,10 @@ There is plan to support WebAssembly in the future.
 You need to add [tokio](https://crates.io/crates/tokio) to your dependencies.
 
 <sup>
-    <sup>
-        <div align="center">
-            :warning: The current API is subject to change. :warning:
-        </div>
-    </sup>
+    <div align="center">
+        :warning: The current API is subject to change. :warning:
+    </div>
 </sup>
-
-##
 
 ```rs
 #[tokio::main]
