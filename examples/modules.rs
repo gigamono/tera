@@ -1,4 +1,4 @@
-// Copyright 2021 the Gigamono authors. All rights reserved. Apache 2.0 license.
+// Copyright 2021 the Gigamono authors. All rights reserved. GPL-3.0 License.
 
 extern crate tera;
 
@@ -26,7 +26,8 @@ async fn main() -> Result<()> {
         .build();
 
     // Create a new runtime.
-    let mut runtime = Runtime::with_permissions(permissions, false, Default::default()).await?;
+    let mut runtime =
+        Runtime::with_permissions(permissions, false, vec![], Default::default()).await?;
 
     // Get main module code.
     let main_module_code = fs::read_to_string("examples/js/modules.js").await?;

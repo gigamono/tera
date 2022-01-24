@@ -1,8 +1,8 @@
-// Copyright 2021 the Gigamono authors. All rights reserved. Apache 2.0 license.
+// Copyright 2021 the Gigamono authors. All rights reserved. GPL-3.0 License.
 
 extern crate tera;
 
-use std::{cell::RefCell, future, rc::Rc};
+use std::{cell::RefCell, future, rc::Rc, fs};
 
 use futures_util::{StreamExt, TryStreamExt};
 use tera::{
@@ -23,7 +23,7 @@ use utilities::{
 async fn main() -> Result<()> {
     // Create permissions
     let permissions = Permissions::builder()
-        .add_permissions(&[event_http::HttpEvent::SendResponse])?
+        .add_permissions(&[event_http::HttpEvent::ResponseSend])?
         .build();
 
     // Create channels.
@@ -53,49 +53,15 @@ async fn main() -> Result<()> {
     let events = create_http_events(Rc::new(response_tx))?;
 
     // Create a new runtime.
-    let mut runtime = Runtime::with_events(permissions, events, false, Default::default()).await?;
+    let mut runtime =
+        Runtime::with_events(permissions, events, false, vec![], Default::default()).await?;
 
     // Read main module code.
-    let main_module_code = r#"
-    const { log, decode, encode, events: { http }, Response } = Tera;
-
-    // Read body.
-    const buf = await http.request.body.readAll();
-
-    // Log body.
-    log.info("request body decoded =", decode(buf));
-
-    // Send random response.
-    if (Math.random() < 0.5) {
-      await sendFixedResponse();
-    } else {
-      await sendStreamingResponse();
-    }
-
-    // Sending response body with fixed content length.
-    async function sendFixedResponse() {
-      await http.respondWith(
-        new Response('{ "message": "Hello beep boop!" }', {
-          headers: { "Content-Type": "application/json" },
-        })
-      );
-    }
-
-    // Streaming response body with transfer-encoding chunked in Http/1.1 or streaming in H2
-    async function sendStreamingResponse() {
-      async function* iterator() {
-        for (let i = 0; i < 20; i++) {
-          yield encode(`index = ${i}\n`);
-        }
-      }
-
-      await http.respondWith(new Response(iterator()));
-    }
-    "#;
+    let code = fs::read_to_string("examples/js/event_http.js")?;
 
     // Execute main module.
     runtime
-        .execute_module("/examples/js/event_http.js", main_module_code)
+        .execute_module("/examples/js/event_http.js", code)
         .await
 }
 

@@ -1,4 +1,4 @@
-// Copyright 2021 the Gigamono authors. All rights reserved. Apache 2.0 license.
+// Copyright 2021 the Gigamono authors. All rights reserved. GPL-3.0 License.
 //! No support for non-ascii headers yet.
 
 use crate::events::Events;
@@ -81,7 +81,7 @@ pub fn event_http(permissions: Rc<RefCell<Permissions>>, events: Rc<RefCell<Even
                 op_sync(op_http_get_request_body_read_stream),
             ),
             (
-                "opEvReadRequestBodyChunk",
+                "opEvRequestReadBodyChunk",
                 op_async(op_http_read_request_body_chunk),
             ),
             // Response.
@@ -98,7 +98,7 @@ pub fn event_http(permissions: Rc<RefCell<Permissions>>, events: Rc<RefCell<Even
                 op_async(op_http_set_send_response_body_write_stream),
             ),
             (
-                "opEvWriteResponseBodyChunk",
+                "opEvResponseWriteBodyChunk",
                 op_async(op_http_write_response_body_chunk),
             ),
         ])
@@ -212,7 +212,7 @@ fn op_http_get_request_headers(
 
     // Check read permission.
     let permissions = Rc::clone(state.borrow::<Rc<RefCell<Permissions>>>());
-    permissions.borrow().check_exists(HttpEvent::ReadRequest)?;
+    permissions.borrow().check_exists(HttpEvent::RequestRead)?;
 
     // Populate a hashmap from header key-value pair.
     let mut map = HashMap::new();
@@ -225,7 +225,11 @@ fn op_http_get_request_headers(
     Ok(map)
 }
 
-fn op_http_get_request_header(state: &mut OpState, key: String, _: ()) -> Result<Option<String>, AnyError> {
+fn op_http_get_request_header(
+    state: &mut OpState,
+    key: String,
+    _: (),
+) -> Result<Option<String>, AnyError> {
     let events_rc = Rc::clone(state.borrow::<Rc<RefCell<Events>>>());
     let events = events_rc.borrow();
 
@@ -237,7 +241,7 @@ fn op_http_get_request_header(state: &mut OpState, key: String, _: ()) -> Result
 
     // Check read permission.
     let permissions = Rc::clone(state.borrow::<Rc<RefCell<Permissions>>>());
-    permissions.borrow().check_exists(HttpEvent::ReadRequest)?;
+    permissions.borrow().check_exists(HttpEvent::RequestRead)?;
 
     // Get the value of request header.
     let value = match request.headers().get(&key) {
@@ -264,9 +268,7 @@ fn op_http_set_request_header(
 
     // Check modify permission.
     let permissions = Rc::clone(state.borrow::<Rc<RefCell<Permissions>>>());
-    permissions
-        .borrow()
-        .check_exists(HttpEvent::ModifyRequest)?;
+    permissions.borrow().check_exists(HttpEvent::RequestWrite)?;
 
     // Set header.
     let optional = request
@@ -292,7 +294,7 @@ fn op_http_get_request_uri_scheme(
 
     // Check read permission.
     let permissions = Rc::clone(state.borrow::<Rc<RefCell<Permissions>>>());
-    permissions.borrow().check_exists(HttpEvent::ReadRequest)?;
+    permissions.borrow().check_exists(HttpEvent::RequestRead)?;
 
     // Get the value of request scheme.
     let authority = request.uri().scheme();
@@ -316,7 +318,7 @@ fn op_http_get_request_uri_authority(
 
     // Check read permission.
     let permissions = Rc::clone(state.borrow::<Rc<RefCell<Permissions>>>());
-    permissions.borrow().check_exists(HttpEvent::ReadRequest)?;
+    permissions.borrow().check_exists(HttpEvent::RequestRead)?;
 
     // Get the value of request authority.
     let authority = request.uri().authority();
@@ -340,7 +342,7 @@ fn op_http_get_request_uri_query(
 
     // Check read permission.
     let permissions = Rc::clone(state.borrow::<Rc<RefCell<Permissions>>>());
-    permissions.borrow().check_exists(HttpEvent::ReadRequest)?;
+    permissions.borrow().check_exists(HttpEvent::RequestRead)?;
 
     // Get the value of request query.
     let query = request.uri().query();
@@ -360,7 +362,7 @@ fn op_http_get_request_uri_path(state: &mut OpState, _: (), _: ()) -> Result<Str
 
     // Check read permission.
     let permissions = Rc::clone(state.borrow::<Rc<RefCell<Permissions>>>());
-    permissions.borrow().check_exists(HttpEvent::ReadRequest)?;
+    permissions.borrow().check_exists(HttpEvent::RequestRead)?;
 
     // Get the value of request path.
     let uri_path = request.uri().path();
@@ -384,7 +386,7 @@ fn op_http_get_request_uri_path_query(
 
     // Check read permission.
     let permissions = Rc::clone(state.borrow::<Rc<RefCell<Permissions>>>());
-    permissions.borrow().check_exists(HttpEvent::ReadRequest)?;
+    permissions.borrow().check_exists(HttpEvent::RequestRead)?;
 
     // Get the value of request path and query.
     let query = request.uri().path_and_query();
@@ -408,7 +410,7 @@ fn op_http_get_request_uri_host(
 
     // Check read permission.
     let permissions = Rc::clone(state.borrow::<Rc<RefCell<Permissions>>>());
-    permissions.borrow().check_exists(HttpEvent::ReadRequest)?;
+    permissions.borrow().check_exists(HttpEvent::RequestRead)?;
 
     // Get the value of request host.
     let query = request.uri().host();
@@ -432,7 +434,7 @@ fn op_http_get_request_uri_port(
 
     // Check read permission.
     let permissions = Rc::clone(state.borrow::<Rc<RefCell<Permissions>>>());
-    permissions.borrow().check_exists(HttpEvent::ReadRequest)?;
+    permissions.borrow().check_exists(HttpEvent::RequestRead)?;
 
     // Get the value of request port.
     Ok(request.uri().port_u16())
@@ -450,7 +452,7 @@ fn op_http_get_request_method(state: &mut OpState, _: (), _: ()) -> Result<Strin
 
     // Check read permission.
     let permissions = Rc::clone(state.borrow::<Rc<RefCell<Permissions>>>());
-    permissions.borrow().check_exists(HttpEvent::ReadRequest)?;
+    permissions.borrow().check_exists(HttpEvent::RequestRead)?;
 
     // Get the value of request method.
     let method = request.method().to_string();
@@ -470,7 +472,7 @@ fn op_http_get_request_version(state: &mut OpState, _: (), _: ()) -> Result<Stri
 
     // Check read permission.
     let permissions = Rc::clone(state.borrow::<Rc<RefCell<Permissions>>>());
-    permissions.borrow().check_exists(HttpEvent::ReadRequest)?;
+    permissions.borrow().check_exists(HttpEvent::RequestRead)?;
 
     // Get the value of request method.
     let version = format!("{:?}", request.version());
@@ -490,7 +492,7 @@ fn op_http_get_request_body_size_hint(state: &mut OpState, _: (), _: ()) -> Resu
 
     // Check read permission.
     let permissions = Rc::clone(state.borrow::<Rc<RefCell<Permissions>>>());
-    permissions.borrow().check_exists(HttpEvent::ReadRequest)?;
+    permissions.borrow().check_exists(HttpEvent::RequestRead)?;
 
     // Get the value of request body size.
     let size = HttpBody::size_hint(request.body())
@@ -516,7 +518,7 @@ fn op_http_get_request_body_read_stream(
 
     // Check read permission.
     let permissions = Rc::clone(state.borrow::<Rc<RefCell<Permissions>>>());
-    permissions.borrow().check_exists(HttpEvent::ReadRequest)?;
+    permissions.borrow().check_exists(HttpEvent::RequestRead)?;
 
     // Take ownership of body.
     let body = mem::take(request.body_mut());
@@ -538,7 +540,7 @@ async fn op_http_read_request_body_chunk(
 ) -> Result<usize, AnyError> {
     // Check read permission.
     let permissions = Rc::clone(state.borrow().borrow::<Rc<RefCell<Permissions>>>());
-    permissions.borrow().check_exists(HttpEvent::ReadRequest)?;
+    permissions.borrow().check_exists(HttpEvent::RequestRead)?;
 
     // Get the next buffer from body.
     let reader = state
@@ -569,7 +571,7 @@ fn op_http_set_response_parts(
     let permissions = Rc::clone(state.borrow::<Rc<RefCell<Permissions>>>());
     permissions
         .borrow()
-        .check_exists(HttpEvent::WriteResponse)?;
+        .check_exists(HttpEvent::ResponseWrite)?;
 
     // Set headers.
     let mut map = HeaderMap::new();
@@ -620,7 +622,7 @@ async fn op_http_set_send_response_body(
     let permissions = Rc::clone(state.borrow().borrow::<Rc<RefCell<Permissions>>>());
     permissions
         .borrow()
-        .check_exists(HttpEvent::WriteResponse)?;
+        .check_exists(HttpEvent::ResponseWrite)?;
 
     // Write to body if buffer is not empty.
     if buf.len() > 0 {
@@ -654,7 +656,7 @@ async fn op_http_set_send_response_body_write_stream(
 
     // Check read permission.
     let permissions = Rc::clone(state.borrow().borrow::<Rc<RefCell<Permissions>>>());
-    permissions.borrow().check_exists(HttpEvent::SendResponse)?;
+    permissions.borrow().check_exists(HttpEvent::ResponseSend)?;
 
     // Create queue.
     let shared_queue = Arc::new(Mutex::new(BufferQueue::new()));
@@ -684,7 +686,7 @@ async fn op_http_write_response_body_chunk(
 ) -> Result<(), AnyError> {
     // Check read permission.
     let permissions = Rc::clone(state.borrow().borrow::<Rc<RefCell<Permissions>>>());
-    permissions.borrow().check_exists(HttpEvent::ReadRequest)?;
+    permissions.borrow().check_exists(HttpEvent::RequestRead)?;
 
     // Get buffer queue.
     let resource = state

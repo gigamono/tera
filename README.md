@@ -30,9 +30,15 @@ There is plan to support WebAssembly in the future.
 
 You need to add [tokio](https://crates.io/crates/tokio) to your dependencies.
 
-<div align="center">
-    :warning: The current API is subject to change. :warning:
-</div>
+<sup>
+    <sup>
+        <div align="center">
+            :warning: The current API is subject to change. :warning:
+        </div>
+    </sup>
+</sup>
+
+##
 
 ```rs
 #[tokio::main]
@@ -51,17 +57,15 @@ async fn main() -> Result<()> {
         .build();
 
     // Create a new runtime.
-    let mut runtime = Runtime::with_permissions(permissions, false, Default::default()).await?;
+    let mut runtime =
+        Runtime::with_permissions(permissions, false, vec![], Default::default()).await?;
 
     // Get the code.
     let code = fs::read_to_string("examples/js/files.js")?;
 
-    fs::write("test.txt", "contents")?;
-
     // Execute main module.
     runtime.execute_module("/examples/js/files.js", code).await
 }
-
 ```
 
 Check the [examples folder](./examples) for more examples.

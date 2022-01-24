@@ -1,14 +1,14 @@
-// Copyright 2021 the Gigamono authors. All rights reserved. Apache 2.0 license.
+// Copyright 2021 the Gigamono authors. All rights reserved. GPL-3.0 License.
 
 use crate::permissions::{PermissionType, PermissionTypeKey};
 use std::any::TypeId;
 
 #[derive(Debug, Clone)]
 pub enum HttpEvent {
-    ReadRequest,
-    ModifyRequest,
-    WriteResponse,
-    SendResponse,
+    RequestRead,
+    RequestWrite,
+    ResponseWrite,
+    ResponseSend,
 }
 
 impl PermissionType for HttpEvent {

@@ -1,4 +1,4 @@
-// Copyright 2021 the Gigamono authors. All rights reserved. Apache 2.0 license.
+// Copyright 2021 the Gigamono authors. All rights reserved. GPL-3.0 License.
 
 use crate::{events::Events, extensions, loaders, permissions::Permissions, RuntimeOptions};
 use deno_core::{
@@ -25,6 +25,7 @@ impl Runtime {
     pub async fn new(
         permissions: Rc<RefCell<Permissions>>,
         enable_snapshot: bool,
+        custom_postscripts: Vec<PathBuf>,
         mut options: RuntimeOptions,
     ) -> Result<Self> {
         // TODO(appcypher): SEC: Support specifying maximum_heap_size_in_bytes.
@@ -47,7 +48,7 @@ impl Runtime {
             let mut snapshot_runtime = JsRuntime::new(snapshot_options);
 
             // Execute postscripts and create snapshot.
-            Self::execute_postscripts(&mut snapshot_runtime)?;
+            Self::execute_postscripts(&mut snapshot_runtime, custom_postscripts.clone())?;
             Self::create_snapshot(&mut snapshot_runtime)?;
 
             // Update options with the new snapshot.
@@ -61,7 +62,7 @@ impl Runtime {
 
         if !enable_snapshot {
             debug!("Runtime will not use snapshot");
-            Self::execute_postscripts(&mut runtime)?;
+            Self::execute_postscripts(&mut runtime, custom_postscripts)?;
         }
 
         Ok(Self {
@@ -73,6 +74,7 @@ impl Runtime {
     pub async fn with_permissions(
         permissions: Permissions,
         enable_snapshot: bool,
+        custom_postscripts: Vec<PathBuf>,
         options: RuntimeOptions,
     ) -> Result<Self> {
         let permissions = Rc::new(RefCell::new(permissions));
@@ -90,13 +92,14 @@ impl Runtime {
             ..options
         };
 
-        Self::new(permissions, enable_snapshot, opts).await
+        Self::new(permissions, enable_snapshot, custom_postscripts, opts).await
     }
 
     pub async fn with_events(
         permissions: Permissions,
         events: Rc<RefCell<Events>>,
         enable_snapshot: bool,
+        custom_postscripts: Vec<PathBuf>,
         options: RuntimeOptions,
     ) -> Result<Self> {
         let permissions = Rc::new(RefCell::new(permissions));
@@ -117,7 +120,7 @@ impl Runtime {
             ..options
         };
 
-        Self::new(permissions, enable_snapshot, opts).await
+        Self::new(permissions, enable_snapshot, custom_postscripts, opts).await
     }
 
     pub async fn execute_module(
@@ -198,7 +201,10 @@ impl Runtime {
         self.runtime.handle_scope()
     }
 
-    fn execute_postscripts(runtime: &mut JsRuntime) -> Result<()> {
+    fn execute_postscripts(
+        runtime: &mut JsRuntime,
+        custom_postscripts: Vec<PathBuf>,
+    ) -> Result<()> {
         // TODO(appcypher): Need to make it possible for users to skip Tera's postscripts and add their own.
         // Get postcripts directory.
         let postscripts_dir =
@@ -212,6 +218,7 @@ impl Runtime {
                     .context("collecting entries in postcripts dir")?
                     .path())
             })
+            .chain(custom_postscripts.into_iter().map(Ok))
             .collect::<Result<Vec<PathBuf>>>()?;
 
         // Sort postscripts.
@@ -303,4 +310,8 @@ impl Runtime {
 
 lazy_static! {
     static ref SNAPSHOT: Mutex<Vec<u8>> = Mutex::new(vec![]);
+}
+
+mod tests {
+
 }

@@ -1,4 +1,4 @@
-// Copyright 2021 the Gigamono authors. All rights reserved. Apache 2.0 license.
+// Copyright 2021 the Gigamono authors. All rights reserved. GPL-3.0 License.
 // TODO(appcypher): Synchronisation needed with fcntl. Also applies to db. https://blog.cloudflare.com/durable-objects-easy-fast-correct-choose-three/
 
 use deno_core::{
@@ -44,8 +44,8 @@ pub fn fs(permissions: Rc<RefCell<Permissions>>) -> Extension {
 #[derive(Debug)]
 struct FileResource {
     file: AsyncRefCell<File>,
-    path: String,
-    options: FileOptions,
+    _path: String,
+    _options: FileOptions,
 }
 
 #[derive(Deserialize, Default, Debug)]
@@ -119,8 +119,8 @@ async fn op_fs_open(
     // Save file info for later.
     let rid = state.borrow_mut().resource_table.add(FileResource {
         file: AsyncRefCell::new(file),
-        path: abs_path_str,
-        options,
+        _path: abs_path_str,
+        _options: options,
     });
 
     Ok(rid)
