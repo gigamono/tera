@@ -2,9 +2,11 @@
 
 mod event_http;
 mod fs;
+mod env;
 
 pub use event_http::event_http;
 pub use fs::fs;
+pub use env::env;
 
 // Re-export
 pub use deno_core::{

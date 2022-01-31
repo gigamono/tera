@@ -311,7 +311,3 @@ impl Runtime {
 lazy_static! {
     static ref SNAPSHOT: Mutex<Vec<u8>> = Mutex::new(vec![]);
 }
-
-mod tests {
-
-}
