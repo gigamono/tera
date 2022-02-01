@@ -14,8 +14,6 @@ There is currently no plan to strictly support web-compatible APIs or out-of-the
 
 `tera` is based on [deno core](https://github.com/denoland/deno/tree/main/core) and inspired by [deno runtime](https://github.com/denoland/deno/tree/main/runtime).
 
-There is plan to support WebAssembly in the future.
-
 > If you are looking to get started with the Gigamono framework, check the [Gigamono repo](https://github.com/gigamono/gigamono).
 
 ##
