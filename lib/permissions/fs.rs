@@ -16,7 +16,7 @@ use utilities::{
     result::{Context, Result},
 };
 
-/// The access levels of the Fs permission.
+/// The File system permissions.
 #[derive(Debug, Copy, Clone)]
 pub enum Fs {
     Open,
@@ -37,9 +37,9 @@ pub struct FsPath {
     regex: Option<Regex>, // The regex representation of the path.
 }
 
-/// Fs permission requires a root to be specified.
+/// An [`fs path`](struct@FsPath) can be a location relative to a root path. FsRoot can be used to represent the root path.
 ///
-/// Path will be resolved to a canonical absolute path.
+/// Paths are resolved to a canonical absolute path.
 #[derive(Clone, Debug)]
 pub struct FsRoot(PathBuf);
 
@@ -210,6 +210,7 @@ impl PermissionType for Fs {
                     errors::new_error(format!("converting path name to utf-8 string {:?}", e))
                 })?;
 
+            // SEC: Check if path matches pattern.
             if fs_path.regex.as_ref().unwrap().is_match(&path_string) {
                 return Ok(());
             }
@@ -229,7 +230,10 @@ impl Resource for FsPath {
     }
 
     fn get_debug(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("FsPath").field("path", &self.path).finish()
+        f.debug_struct("FsPath")
+            .field("path", &self.path)
+            .field("regex", &self.regex)
+            .finish()
     }
 }
 
